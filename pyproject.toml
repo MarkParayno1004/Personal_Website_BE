@@ -1,0 +1,23 @@
+[project]
+name = "personal-portfolio"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "MarkParayno1004", email = "paraynomarkphilip@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "bcrypt>=5.0.0",
+    "fastapi[standard]>=0.141.1",
+    "psycopg2-binary>=2.9.13",
+    "pyjwt>=2.14.0",
+    "sqlalchemy>=2.0.52",
+]
+
+[project.scripts]
+personal-portfolio = "personal_portfolio:main"
+
+[build-system]
+requires = ["uv_build>=0.12.13,<0.13.0"]
+build-backend = "uv_build"
