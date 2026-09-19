@@ -1,8 +1,11 @@
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from sqlalchemy.orm import Session
 from database import Base, engine, get_db
+from dependencies import get_docs_authenticated_user
 from models import User
 from routers import admin, auth, expenses, github, medications, portfolio
 
@@ -23,6 +26,9 @@ app = FastAPI(
     title="Personal Portfolio API",
     description="FastAPI backend featuring PostgreSQL, JWT Authentication, Admin Roles, Expenses & Medications trackers, GitHub Repositories, and LinkedIn Event Posts.",
     version="0.2.0",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
     lifespan=lifespan,
 )
 
@@ -42,6 +48,27 @@ app.include_router(expenses.router)
 app.include_router(medications.router)
 app.include_router(github.router)
 app.include_router(portfolio.router)
+
+
+# Protected API Documentation Endpoints
+@app.get("/openapi.json", include_in_schema=False)
+def get_protected_openapi(user: User = Depends(get_docs_authenticated_user)):
+    return get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+
+
+@app.get("/docs", include_in_schema=False)
+def get_protected_docs(user: User = Depends(get_docs_authenticated_user)):
+    return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{app.title} - Swagger UI")
+
+
+@app.get("/redoc", include_in_schema=False)
+def get_protected_redoc(user: User = Depends(get_docs_authenticated_user)):
+    return get_redoc_html(openapi_url="/openapi.json", title=f"{app.title} - ReDoc")
 
 
 # Backwards-compatible root endpoint aliases

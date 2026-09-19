@@ -37,14 +37,14 @@ class TestMainApi(unittest.TestCase):
 
         # Seed test user 123
         db = cls.TestingSessionLocal()
-        seed_token = create_access_token({"sub": "123", "email": "test@test.com"})
+        cls.seed_token = create_access_token({"sub": "123", "email": "test@test.com"})
         cls.seed_user = User(
             id=123,
             email="test@test.com",
             first_name="test name",
             last_name="test last name",
             hashed_password=hash_password("123"),
-            token=seed_token,
+            token=cls.seed_token,
             admin=False,
         )
         db.add(cls.seed_user)
@@ -117,6 +117,21 @@ class TestMainApi(unittest.TestCase):
         user_public_props = openapi_schema["components"]["schemas"]["UserPublic"]["properties"]
         self.assertNotIn("password", user_public_props)
         self.assertNotIn("hashed_password", user_public_props)
+
+    def test_protected_docs_access(self):
+        """Ensure /docs is protected and requires valid credentials or token."""
+        # Unauthenticated request should fail with 401
+        unauth_res = self.client.get("/docs")
+        self.assertEqual(unauth_res.status_code, 401)
+        self.assertEqual(unauth_res.headers["WWW-Authenticate"], "Basic realm='Protected API Documentation'")
+
+        # HTTP Basic Auth using valid database credentials
+        auth_basic_res = self.client.get("/docs", auth=("test@test.com", "123"))
+        self.assertEqual(auth_basic_res.status_code, 200)
+
+        # Token Auth using query parameter ?token=...
+        token_res = self.client.get(f"/docs?token={self.seed_token}")
+        self.assertEqual(token_res.status_code, 200)
 
 
 if __name__ == "__main__":
