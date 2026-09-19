@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,6 +11,9 @@ from models import User
 from routers import admin, auth, expenses, github, medications, portfolio
 
 from schemas import UserCreate, UserLogin, UserPublic
+
+ENVIRONMENT = os.getenv("APP_ENV").lower()
+IS_PRODUCTION = ENVIRONMENT == "production"
 
 
 @asynccontextmanager
@@ -53,6 +57,8 @@ app.include_router(portfolio.router)
 # Protected API Documentation Endpoints
 @app.get("/openapi.json", include_in_schema=False)
 def get_protected_openapi(user: User = Depends(get_docs_authenticated_user)):
+    if IS_PRODUCTION:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
     return get_openapi(
         title=app.title,
         version=app.version,
@@ -63,11 +69,15 @@ def get_protected_openapi(user: User = Depends(get_docs_authenticated_user)):
 
 @app.get("/docs", include_in_schema=False)
 def get_protected_docs(user: User = Depends(get_docs_authenticated_user)):
+    if IS_PRODUCTION:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
     return get_swagger_ui_html(openapi_url="/openapi.json", title=f"{app.title} - Swagger UI")
 
 
 @app.get("/redoc", include_in_schema=False)
 def get_protected_redoc(user: User = Depends(get_docs_authenticated_user)):
+    if IS_PRODUCTION:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
     return get_redoc_html(openapi_url="/openapi.json", title=f"{app.title} - ReDoc")
 
 
