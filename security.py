@@ -1,13 +1,15 @@
 import os
+from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 import bcrypt
 import jwt
 
+load_dotenv()
+
 # Recommended: at least 32 bytes (256 bits) for HS256
-SECRET_KEY = os.getenv(
-    "JWT_SECRET_KEY",
-    "0a96da92853b489521f08a7f1681b4f02ac5e7c6442f65cd46cbdde40ddc9bfd",
-)
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError("SECRET KET environment variable is not set. Check your env")
 
 HEADER = {
     "alg": "HS256",

@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from database import Base, engine, get_db
 from models import User
-from routers import admin, auth, expenses, github, linkedin, medications, portfolio
+from routers import admin, auth, expenses, github, medications, portfolio
 
 from schemas import UserCreate, UserLogin, UserPublic
 
@@ -41,7 +41,6 @@ app.include_router(admin.router)
 app.include_router(expenses.router)
 app.include_router(medications.router)
 app.include_router(github.router)
-app.include_router(linkedin.router)
 app.include_router(portfolio.router)
 
 

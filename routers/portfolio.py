@@ -71,14 +71,12 @@ DEFAULT_THEME_CONFIG = {
     "primary_color": "#2563eb",
     "dark_mode_default": True,
     "show_github_repos": True,
-    "show_linkedin_posts": True,
     "section_order": [
         "hero",
         "about",
         "skills",
         "experience",
         "github",
-        "linkedin",
         "education",
         "contact",
     ],
@@ -94,7 +92,7 @@ def _get_or_create_portfolio_config(db: Session) -> PortfolioConfig:
             location="San Juan City, Philippines",
             phone="+63 961 312 8973",
             email="paraynomarkphilip@gmail.com",
-            linkedin_url="https://www.linkedin.com/in/mark-philip-parayno/",
+            linkedin_url="https://www.linkedin.com/in/mark-philip-parayno-b6841b198/",
             github_username="MarkParayno1004",
             about_summary=(
                 "Software Engineer with production experience building and maintaining mobile and web applications "

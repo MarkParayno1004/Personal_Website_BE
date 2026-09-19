@@ -1,13 +1,15 @@
 import os
+from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
+load_dotenv()
+
 # PostgreSQL Connection URL
 # e.g., postgresql+psycopg2://<username>:<password>@<host>:<port>/<dbname>
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+psycopg2://postgres:postgres@localhost:5432/personal_portfolio",
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is not set. Check your env")
 
 # Connect args (e.g. for sqlite fallback if testing locally without running Postgres)
 connect_args = {}
