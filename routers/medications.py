@@ -10,7 +10,13 @@ from schemas import (
     MedicationUpdate,
 )
 
+from redis_cache import delete_cache_pattern, get_cache, set_cache
+
 router = APIRouter(prefix="/medications", tags=["Medications"])
+
+
+def invalidate_user_medications_cache(user_id: int):
+    delete_cache_pattern(f"cache:*medication*user:{user_id}*")
 
 
 def build_medication_response(med: Medication) -> MedicationResponse:
@@ -42,6 +48,8 @@ def create_medication(
     db.add(med)
     db.commit()
     db.refresh(med)
+
+    invalidate_user_medications_cache(current_user.id)
     return build_medication_response(med)
 
 
@@ -54,13 +62,20 @@ def get_medications(
     List all medications tracked by the user, showing medicine cost,
     doses already taken, and total expenditure.
     """
+    cache_key = f"cache:medications:user:{current_user.id}"
+    cached = get_cache(cache_key)
+    if cached:
+        return [MedicationResponse(**m) for m in cached]
+
     meds = (
         db.query(Medication)
         .filter(Medication.user_id == current_user.id)
         .order_by(Medication.name.asc())
         .all()
     )
-    return [build_medication_response(m) for m in meds]
+    result = [build_medication_response(m) for m in meds]
+    set_cache(cache_key, [m.model_dump(mode="json") for m in result])
+    return result
 
 
 @router.get("/{medication_id}", response_model=MedicationResponse)
@@ -70,6 +85,11 @@ def get_medication(
     current_user: User = Depends(get_current_user),
 ):
     """Get details of a specific medication."""
+    cache_key = f"cache:medication:{medication_id}:user:{current_user.id}"
+    cached = get_cache(cache_key)
+    if cached:
+        return MedicationResponse(**cached)
+
     med = (
         db.query(Medication)
         .filter(Medication.id == medication_id, Medication.user_id == current_user.id)
@@ -80,7 +100,9 @@ def get_medication(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Medication not found",
         )
-    return build_medication_response(med)
+    result = build_medication_response(med)
+    set_cache(cache_key, result.model_dump(mode="json"))
+    return result
 
 
 @router.post("/{medication_id}/take", response_model=MedicationResponse)
@@ -108,6 +130,8 @@ def log_dose_taken(
     med.doses_taken += log_in.doses
     db.commit()
     db.refresh(med)
+
+    invalidate_user_medications_cache(current_user.id)
     return build_medication_response(med)
 
 
@@ -137,6 +161,8 @@ def update_medication(
 
     db.commit()
     db.refresh(med)
+
+    invalidate_user_medications_cache(current_user.id)
     return build_medication_response(med)
 
 
@@ -159,4 +185,6 @@ def delete_medication(
         )
     db.delete(med)
     db.commit()
+
+    invalidate_user_medications_cache(current_user.id)
     return None

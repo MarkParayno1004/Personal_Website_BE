@@ -110,13 +110,26 @@ def _get_or_create_portfolio_config(db: Session) -> PortfolioConfig:
     return config
 
 
+from redis_cache import delete_cache, get_cache, set_cache
+
+PORTFOLIO_CACHE_KEY = "cache:portfolio:config"
+
+
 @router.get("/config", response_model=PortfolioConfigResponse)
 def get_portfolio_config(db: Session = Depends(get_db)):
     """
     Public Endpoint: Retrieve current Portfolio Configuration & CV Details.
     Auto-initializes with Mark Philip V. Parayno's CV details if empty.
+    Uses Redis caching if available.
     """
-    return _get_or_create_portfolio_config(db)
+    cached = get_cache(PORTFOLIO_CACHE_KEY)
+    if cached:
+        return PortfolioConfigResponse(**cached)
+
+    config = _get_or_create_portfolio_config(db)
+    response_data = PortfolioConfigResponse.model_validate(config)
+    set_cache(PORTFOLIO_CACHE_KEY, response_data.model_dump(mode="json"))
+    return response_data
 
 
 @router.put("/config", response_model=PortfolioConfigResponse)
@@ -128,6 +141,7 @@ def update_portfolio_config(
     """
     Admin Endpoint: Update and reconfigure portfolio profile, skills, experience,
     education, contact info, and theme settings.
+    Invalidates Redis cache on update.
     """
     config = _get_or_create_portfolio_config(db)
 
@@ -138,4 +152,7 @@ def update_portfolio_config(
 
     db.commit()
     db.refresh(config)
+
+    delete_cache(PORTFOLIO_CACHE_KEY)
+
     return config

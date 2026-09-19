@@ -13,7 +13,13 @@ from schemas import (
     TaxDeductionResponse,
 )
 
+from redis_cache import delete_cache_pattern, get_cache, set_cache
+
 router = APIRouter(prefix="/expenses", tags=["Expenses"])
+
+
+def invalidate_user_expenses_cache(user_id: int):
+    delete_cache_pattern(f"cache:*expense*user:{user_id}*")
 
 
 def build_expense_response(expense: Expense) -> ExpenseResponse:
@@ -109,6 +115,8 @@ def create_expense(
 
     db.commit()
     db.refresh(expense)
+
+    invalidate_user_expenses_cache(current_user.id)
     return build_expense_response(expense)
 
 
@@ -118,13 +126,20 @@ def get_expenses(
     current_user: User = Depends(get_current_user),
 ):
     """Retrieve all expenses with items, tax deductions, and computed totals for the current user."""
+    cache_key = f"cache:expenses:user:{current_user.id}"
+    cached = get_cache(cache_key)
+    if cached:
+        return [ExpenseResponse(**item) for item in cached]
+
     expenses = (
         db.query(Expense)
         .filter(Expense.user_id == current_user.id)
         .order_by(Expense.created_at.desc())
         .all()
     )
-    return [build_expense_response(exp) for exp in expenses]
+    result = [build_expense_response(exp) for exp in expenses]
+    set_cache(cache_key, [item.model_dump(mode="json") for item in result])
+    return result
 
 
 @router.get("/{expense_id}", response_model=ExpenseResponse)
@@ -134,6 +149,11 @@ def get_expense(
     current_user: User = Depends(get_current_user),
 ):
     """Retrieve details for a specific expense group by ID."""
+    cache_key = f"cache:expense:{expense_id}:user:{current_user.id}"
+    cached = get_cache(cache_key)
+    if cached:
+        return ExpenseResponse(**cached)
+
     expense = (
         db.query(Expense)
         .filter(Expense.id == expense_id, Expense.user_id == current_user.id)
@@ -144,7 +164,9 @@ def get_expense(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Expense not found",
         )
-    return build_expense_response(expense)
+    result = build_expense_response(expense)
+    set_cache(cache_key, result.model_dump(mode="json"))
+    return result
 
 
 @router.patch("/{expense_id}", response_model=ExpenseResponse)
@@ -175,6 +197,8 @@ def update_expense(
 
     db.commit()
     db.refresh(expense)
+
+    invalidate_user_expenses_cache(current_user.id)
     return build_expense_response(expense)
 
 
@@ -205,6 +229,8 @@ def add_item_to_expense(
     db.add(new_item)
     db.commit()
     db.refresh(expense)
+
+    invalidate_user_expenses_cache(current_user.id)
     return build_expense_response(expense)
 
 
@@ -241,6 +267,8 @@ def delete_expense_item(
     db.delete(item)
     db.commit()
     db.refresh(expense)
+
+    invalidate_user_expenses_cache(current_user.id)
     return build_expense_response(expense)
 
 
@@ -277,6 +305,8 @@ def add_tax_deduction_to_expense(
 
     db.commit()
     db.refresh(expense)
+
+    invalidate_user_expenses_cache(current_user.id)
     return build_expense_response(expense)
 
 
@@ -317,6 +347,8 @@ def delete_tax_deduction(
     db.delete(deduction)
     db.commit()
     db.refresh(expense)
+
+    invalidate_user_expenses_cache(current_user.id)
     return build_expense_response(expense)
 
 
@@ -339,4 +371,6 @@ def delete_expense(
         )
     db.delete(expense)
     db.commit()
+
+    invalidate_user_expenses_cache(current_user.id)
     return None
