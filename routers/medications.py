@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user
-from models import Medication, User
+from models import Category, Medication, User
 from schemas import (
     MedicationCreate,
     MedicationDoseLog,
@@ -17,6 +17,7 @@ router = APIRouter(prefix="/medications", tags=["Medications"])
 
 def invalidate_user_medications_cache(user_id: int):
     delete_cache_pattern(f"cache:*medication*user:{user_id}*")
+    delete_cache_pattern(f"cache:*category*user:{user_id}*")
 
 
 def build_medication_response(med: Medication) -> MedicationResponse:
@@ -27,6 +28,7 @@ def build_medication_response(med: Medication) -> MedicationResponse:
         cost=med.cost,
         doses_taken=med.doses_taken,
         total_spent=total_spent,
+        category_id=med.category_id,
     )
 
 
@@ -39,10 +41,23 @@ def create_medication(
     """
     Register a medication with its cost and initial count of doses already taken.
     """
+    if med_in.category_id is not None:
+        category = (
+            db.query(Category)
+            .filter(Category.id == med_in.category_id, Category.user_id == current_user.id)
+            .first()
+        )
+        if not category:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Category not found",
+            )
+
     med = Medication(
         name=med_in.name,
         cost=med_in.cost,
         doses_taken=med_in.doses_taken,
+        category_id=med_in.category_id,
         user_id=current_user.id,
     )
     db.add(med)
@@ -158,6 +173,21 @@ def update_medication(
         med.cost = update_in.cost
     if update_in.doses_taken is not None:
         med.doses_taken = update_in.doses_taken
+    if "category_id" in update_in.model_fields_set:
+        if update_in.category_id is not None:
+            category = (
+                db.query(Category)
+                .filter(Category.id == update_in.category_id, Category.user_id == current_user.id)
+                .first()
+            )
+            if not category:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Category not found",
+                )
+            med.category_id = update_in.category_id
+        else:
+            med.category_id = None
 
     db.commit()
     db.refresh(med)

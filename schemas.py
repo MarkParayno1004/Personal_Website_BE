@@ -79,6 +79,7 @@ class ExpenseCreate(BaseModel):
     title: str  # e.g. "Chase Sapphire Credit Card Expenses" or "Monthly Budget - March"
     gross_income: float = 0.0
     net_income: float | None = None
+    category_id: int | None = None
     items: list[ExpenseItemCreate] = []
     tax_deductions: list[TaxDeductionCreate] = []
 
@@ -87,6 +88,7 @@ class ExpenseUpdate(BaseModel):
     title: str | None = None
     gross_income: float | None = None
     net_income: float | None = None
+    category_id: int | None = None
 
 
 class ExpenseResponse(BaseModel):
@@ -98,6 +100,7 @@ class ExpenseResponse(BaseModel):
     total_expenses: float = 0.0
     total_amount: float = 0.0  # Kept for backward compatibility
     remaining_income: float = 0.0
+    category_id: int | None = None
     items: list[ExpenseItemResponse] = []
     tax_deductions: list[TaxDeductionResponse] = []
     created_at: datetime | None = None
@@ -112,11 +115,13 @@ class MedicationCreate(BaseModel):
     name: str
     cost: float  # Cost of medicine
     doses_taken: int = 0  # How many already taken
+    category_id: int | None = None
 
 
 class MedicationUpdate(BaseModel):
     cost: float | None = None
     doses_taken: int | None = None
+    category_id: int | None = None
 
 
 class MedicationDoseLog(BaseModel):
@@ -129,6 +134,34 @@ class MedicationResponse(BaseModel):
     cost: float
     doses_taken: int
     total_spent: float = 0.0
+    category_id: int | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==========================================
+# Category Schemas
+# ==========================================
+class CategoryCreate(BaseModel):
+    title: str
+    expenses: list[ExpenseCreate] = []
+    medications: list[MedicationCreate] = []
+
+
+class CategoryUpdate(BaseModel):
+    title: str | None = None
+
+
+class CategoryResponse(BaseModel):
+    id: int
+    title: str
+    user_id: int | None = None
+    expenses: list[ExpenseResponse] = []
+    medications: list[MedicationResponse] = []
+    total_expenses_amount: float = 0.0
+    total_medications_amount: float = 0.0
+    total_amount: float = 0.0
+    created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -164,6 +197,7 @@ class AdminStats(BaseModel):
     total_users: int
     total_expenses: int
     total_medications: int
+    total_categories: int = 0
     total_expense_amount: float
 
 

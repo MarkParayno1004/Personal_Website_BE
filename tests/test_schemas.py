@@ -1,10 +1,13 @@
 import unittest
 from schemas import (
+    CategoryCreate,
+    CategoryResponse,
     ExpenseCreate,
     ExpenseItemCreate,
     ExpenseItemResponse,
     ExpenseResponse,
     ExpenseUpdate,
+    MedicationCreate,
     TaxDeductionCreate,
     TaxDeductionResponse,
     User,
@@ -120,5 +123,39 @@ class TestExpenseAndTaxSchemas(unittest.TestCase):
         self.assertIsNone(update.net_income)
 
 
+class TestCategoryAndMedicationSchemas(unittest.TestCase):
+    def test_category_create_schema(self):
+        cat = CategoryCreate(
+            title="Healthcare",
+            expenses=[
+                ExpenseCreate(
+                    title="Insurance",
+                    gross_income=500.0,
+                    items=[ExpenseItemCreate(description="Premium", amount=200.0)],
+                )
+            ],
+            medications=[
+                MedicationCreate(name="Aspirin", cost=5.0, doses_taken=2)
+            ],
+        )
+        self.assertEqual(cat.title, "Healthcare")
+        self.assertEqual(len(cat.expenses), 1)
+        self.assertEqual(len(cat.medications), 1)
+        self.assertEqual(cat.medications[0].name, "Aspirin")
+
+    def test_category_response_schema(self):
+        cat_res = CategoryResponse(
+            id=1,
+            title="Healthcare",
+            user_id=123,
+            total_expenses_amount=200.0,
+            total_medications_amount=10.0,
+            total_amount=210.0,
+        )
+        self.assertEqual(cat_res.id, 1)
+        self.assertEqual(cat_res.total_amount, 210.0)
+
+
 if __name__ == "__main__":
     unittest.main()
+

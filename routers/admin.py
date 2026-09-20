@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_admin
-from models import Expense, ExpenseItem, Medication, User
+from models import Category, Expense, ExpenseItem, Medication, User
 from schemas import AdminStats, UserPublic, UserRoleUpdate
 
 router = APIRouter(
@@ -16,6 +16,7 @@ router = APIRouter(
 def get_admin_dashboard_stats(db: Session = Depends(get_db)):
     """Retrieve high-level system statistics for administrators."""
     total_users = db.query(User).count()
+    total_categories = db.query(Category).count()
     total_expenses = db.query(Expense).count()
     total_medications = db.query(Medication).count()
 
@@ -25,6 +26,7 @@ def get_admin_dashboard_stats(db: Session = Depends(get_db)):
 
     return AdminStats(
         total_users=total_users,
+        total_categories=total_categories,
         total_expenses=total_expenses,
         total_medications=total_medications,
         total_expense_amount=float(total_amount),

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user
-from models import Expense, ExpenseItem, TaxDeduction, User
+from models import Category, Expense, ExpenseItem, TaxDeduction, User
 from schemas import (
     ExpenseCreate,
     ExpenseItemCreate,
@@ -20,6 +20,7 @@ router = APIRouter(prefix="/expenses", tags=["Expenses"])
 
 def invalidate_user_expenses_cache(user_id: int):
     delete_cache_pattern(f"cache:*expense*user:{user_id}*")
+    delete_cache_pattern(f"cache:*category*user:{user_id}*")
 
 
 def build_expense_response(expense: Expense) -> ExpenseResponse:
@@ -63,6 +64,7 @@ def build_expense_response(expense: Expense) -> ExpenseResponse:
         total_expenses=round(total_expenses, 2),
         total_amount=round(total_expenses, 2),
         remaining_income=round(remaining_income, 2),
+        category_id=expense.category_id,
         items=items_response,
         tax_deductions=tax_deductions_response,
         created_at=expense.created_at,
@@ -79,6 +81,18 @@ def create_expense(
     Create a new expense sheet with title, gross income, net income,
     multiple expense items, and multiple tax deductions.
     """
+    if expense_in.category_id is not None:
+        category = (
+            db.query(Category)
+            .filter(Category.id == expense_in.category_id, Category.user_id == current_user.id)
+            .first()
+        )
+        if not category:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Category not found",
+            )
+
     total_deductions = sum(d.amount for d in expense_in.tax_deductions)
     if expense_in.net_income is not None:
         computed_net_income = expense_in.net_income
@@ -91,6 +105,7 @@ def create_expense(
         title=expense_in.title,
         gross_income=expense_in.gross_income or 0.0,
         net_income=computed_net_income,
+        category_id=expense_in.category_id,
         user_id=current_user.id,
     )
     db.add(expense)
@@ -176,7 +191,7 @@ def update_expense(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Update title, gross income, or net income of an existing expense sheet."""
+    """Update title, gross income, net income, or category of an existing expense sheet."""
     expense = (
         db.query(Expense)
         .filter(Expense.id == expense_id, Expense.user_id == current_user.id)
@@ -194,6 +209,21 @@ def update_expense(
         expense.gross_income = expense_in.gross_income
     if expense_in.net_income is not None:
         expense.net_income = expense_in.net_income
+    if "category_id" in expense_in.model_fields_set:
+        if expense_in.category_id is not None:
+            category = (
+                db.query(Category)
+                .filter(Category.id == expense_in.category_id, Category.user_id == current_user.id)
+                .first()
+            )
+            if not category:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Category not found",
+                )
+            expense.category_id = expense_in.category_id
+        else:
+            expense.category_id = None
 
     db.commit()
     db.refresh(expense)

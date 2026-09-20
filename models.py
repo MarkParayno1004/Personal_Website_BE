@@ -16,8 +16,22 @@ class User(Base):
     token = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+    categories = relationship("Category", back_populates="owner", cascade="all, delete-orphan")
     expenses = relationship("Expense", back_populates="owner", cascade="all, delete-orphan")
     medications = relationship("Medication", back_populates="owner", cascade="all, delete-orphan")
+
+
+class Category(Base):
+    __tablename__ = "categories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    owner = relationship("User", back_populates="categories")
+    expenses = relationship("Expense", back_populates="category", cascade="all, delete-orphan")
+    medications = relationship("Medication", back_populates="category", cascade="all, delete-orphan")
 
 
 class Expense(Base):
@@ -28,9 +42,11 @@ class Expense(Base):
     gross_income = Column(Float, default=0.0, nullable=False)
     net_income = Column(Float, default=0.0, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     owner = relationship("User", back_populates="expenses")
+    category = relationship("Category", back_populates="expenses")
     items = relationship("ExpenseItem", back_populates="expense", cascade="all, delete-orphan")
     tax_deductions = relationship("TaxDeduction", back_populates="expense", cascade="all, delete-orphan")
 
@@ -67,9 +83,11 @@ class Medication(Base):
     cost = Column(Float, nullable=False)  # Cost of the medicine
     doses_taken = Column(Integer, default=0, nullable=False)  # How many already taken
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     owner = relationship("User", back_populates="medications")
+    category = relationship("Category", back_populates="medications")
 
 
 class PortfolioConfig(Base):
