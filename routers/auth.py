@@ -22,7 +22,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         email=user_data.email,
         first_name=user_data.first_name,
         last_name=user_data.last_name,
-        admin=user_data.admin,
+        admin=False,  # Enforce non-admin for public registrations (use scripts/create_admin.py for admins)
         hashed_password=hash_password(user_data.password),
     )
     db.add(new_user)

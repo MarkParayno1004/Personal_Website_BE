@@ -185,13 +185,14 @@ def get_expense(
 
 
 @router.patch("/{expense_id}", response_model=ExpenseResponse)
+@router.put("/{expense_id}", response_model=ExpenseResponse)
 def update_expense(
     expense_id: int,
     expense_in: ExpenseUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Update title, gross income, net income, or category of an existing expense sheet."""
+    """Update title, gross income, net income, category, items, or deductions of an existing expense sheet."""
     expense = (
         db.query(Expense)
         .filter(Expense.id == expense_id, Expense.user_id == current_user.id)
@@ -224,6 +225,16 @@ def update_expense(
             expense.category_id = expense_in.category_id
         else:
             expense.category_id = None
+
+    if expense_in.items is not None:
+        db.query(ExpenseItem).filter(ExpenseItem.expense_id == expense.id).delete()
+        for item in expense_in.items:
+            db.add(ExpenseItem(expense_id=expense.id, description=item.description, amount=item.amount))
+
+    if expense_in.tax_deductions is not None:
+        db.query(TaxDeduction).filter(TaxDeduction.expense_id == expense.id).delete()
+        for deduction in expense_in.tax_deductions:
+            db.add(TaxDeduction(expense_id=expense.id, description=deduction.description, amount=deduction.amount))
 
     db.commit()
     db.refresh(expense)

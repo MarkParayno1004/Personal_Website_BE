@@ -151,6 +151,7 @@ def log_dose_taken(
 
 
 @router.patch("/{medication_id}", response_model=MedicationResponse)
+@router.put("/{medication_id}", response_model=MedicationResponse)
 def update_medication(
     medication_id: int,
     update_in: MedicationUpdate,

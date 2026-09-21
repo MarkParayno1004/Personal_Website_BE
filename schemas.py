@@ -89,6 +89,8 @@ class ExpenseUpdate(BaseModel):
     gross_income: float | None = None
     net_income: float | None = None
     category_id: int | None = None
+    items: list[ExpenseItemCreate] | None = None
+    tax_deductions: list[TaxDeductionCreate] | None = None
 
 
 class ExpenseResponse(BaseModel):

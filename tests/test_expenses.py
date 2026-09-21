@@ -237,6 +237,38 @@ class TestExpensesModule(unittest.TestCase):
         get_res_after = self.client.get(f"/expenses/{expense_id}", headers=self.headers)
         self.assertEqual(get_res_after.status_code, 404)
 
+    def test_put_update_expense_with_items_and_tax_deductions(self):
+        """Test updating an expense sheet via PUT and replacing its items/deductions."""
+        create_res = self.client.post(
+            "/expenses/",
+            json={"title": "Original Sheet", "gross_income": 2000.0, "items": [{"description": "Old Item", "amount": 100.0}]},
+            headers=self.headers,
+        )
+        expense_id = create_res.json()["id"]
+
+        put_res = self.client.put(
+            f"/expenses/{expense_id}",
+            json={
+                "title": "Replaced Sheet",
+                "gross_income": 3000.0,
+                "items": [
+                    {"description": "New Item 1", "amount": 250.0},
+                    {"description": "New Item 2", "amount": 150.0},
+                ],
+                "tax_deductions": [
+                    {"description": "New Deduction", "amount": 100.0},
+                ],
+            },
+            headers=self.headers,
+        )
+        self.assertEqual(put_res.status_code, 200)
+        data = put_res.json()
+        self.assertEqual(data["title"], "Replaced Sheet")
+        self.assertEqual(len(data["items"]), 2)
+        self.assertEqual(len(data["tax_deductions"]), 1)
+        self.assertEqual(data["total_expenses"], 400.0)
+        self.assertEqual(data["total_tax_deductions"], 100.0)
+
 
 if __name__ == "__main__":
     unittest.main()

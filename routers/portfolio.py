@@ -133,6 +133,7 @@ def get_portfolio_config(db: Session = Depends(get_db)):
 
 
 @router.put("/config", response_model=PortfolioConfigResponse)
+@router.patch("/config", response_model=PortfolioConfigResponse)
 def update_portfolio_config(
     update_data: PortfolioConfigUpdate,
     db: Session = Depends(get_db),
