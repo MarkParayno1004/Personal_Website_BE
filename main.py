@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from database import Base, engine, get_db
 from dependencies import get_docs_authenticated_user
@@ -53,6 +54,11 @@ app.include_router(expenses.router)
 app.include_router(medications.router)
 app.include_router(github.router)
 app.include_router(portfolio.router)
+
+# Serve uploaded files (profile pictures, etc.)
+UPLOADS_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 
 
 # Protected API Documentation Endpoints

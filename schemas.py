@@ -23,6 +23,7 @@ class UserLogin(BaseModel):
 
 class UserPublic(UserBase):
     id: int
+    profile_picture: str | None = None
     token: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -35,6 +36,7 @@ class Token(BaseModel):
 
 class User(UserBase):
     id: int
+    profile_picture: str | None = None
     token: str | None = None
     password: str | None = None
     hashed_password: str | None = None

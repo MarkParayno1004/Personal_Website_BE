@@ -13,6 +13,7 @@ class User(Base):
     last_name = Column(String, nullable=False)
     hashed_password = Column(String, nullable=False)
     admin = Column(Boolean, default=False, nullable=False)
+    profile_picture = Column(String, nullable=True)
     token = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
