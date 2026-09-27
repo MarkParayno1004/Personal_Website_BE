@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import os
+import uuid
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_admin
@@ -6,6 +8,42 @@ from models import PortfolioConfig, User
 from schemas import PortfolioConfigResponse, PortfolioConfigUpdate
 
 router = APIRouter(prefix="/portfolio", tags=["Portfolio Configuration"])
+
+DOCUMENTS_UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", "documents")
+MAX_DOCUMENT_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+def validate_pdf_file(file: UploadFile) -> bytes:
+    """Validate that the uploaded file is strictly a valid PDF document."""
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext != ".pdf":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Only PDF files (.pdf) are allowed. Received: '{ext or 'unknown'}'",
+        )
+
+    file.file.seek(0, 2)
+    size = file.file.tell()
+    file.file.seek(0)
+    if size > MAX_DOCUMENT_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File exceeds maximum allowed size of {MAX_DOCUMENT_SIZE // (1024 * 1024)} MB",
+        )
+    if size == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file is empty",
+        )
+
+    file_bytes = file.file.read()
+    if not file_bytes.startswith(b"%PDF-") and not file_bytes.startswith(b"%PDF"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid PDF file format. File does not start with valid PDF signature.",
+        )
+
+    return file_bytes
 
 DEFAULT_CV_SKILLS = {
     "Languages": ["TypeScript", "JavaScript", "Dart", "Python", "PHP", "HTML", "CSS"],
@@ -154,6 +192,71 @@ def update_portfolio_config(
     db.commit()
     db.refresh(config)
 
-    delete_cache(PORTFOLIO_CACHE_KEY)
+    return config
 
+
+@router.put("/cv", response_model=PortfolioConfigResponse)
+@router.post("/cv", response_model=PortfolioConfigResponse)
+def upload_portfolio_cv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin),
+):
+    """
+    Admin Endpoint: Upload or replace the portfolio CV / Resume PDF file.
+    Validates that the file is strictly a valid PDF document (up to 10MB).
+    """
+    pdf_bytes = validate_pdf_file(file)
+
+    os.makedirs(DOCUMENTS_UPLOAD_DIR, exist_ok=True)
+
+    config = _get_or_create_portfolio_config(db)
+
+    # Delete existing CV file on disk if any
+    if config.cv_url:
+        old_file = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            config.cv_url.lstrip("/"),
+        )
+        if os.path.exists(old_file):
+            os.remove(old_file)
+
+    unique_filename = f"cv_{uuid.uuid4().hex}.pdf"
+    file_path = os.path.join(DOCUMENTS_UPLOAD_DIR, unique_filename)
+    with open(file_path, "wb") as f:
+        f.write(pdf_bytes)
+
+    config.cv_url = f"/uploads/documents/{unique_filename}"
+    db.commit()
+    db.refresh(config)
+
+    delete_cache(PORTFOLIO_CACHE_KEY)
+    return config
+
+
+@router.delete("/cv", response_model=PortfolioConfigResponse)
+def delete_portfolio_cv(
+    db: Session = Depends(get_db),
+    admin_user: User = Depends(get_current_admin),
+):
+    """Admin Endpoint: Delete the uploaded portfolio CV PDF."""
+    config = _get_or_create_portfolio_config(db)
+    if not config.cv_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No CV file to delete",
+        )
+
+    old_file = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)),
+        config.cv_url.lstrip("/"),
+    )
+    if os.path.exists(old_file):
+        os.remove(old_file)
+
+    config.cv_url = None
+    db.commit()
+    db.refresh(config)
+
+    delete_cache(PORTFOLIO_CACHE_KEY)
     return config

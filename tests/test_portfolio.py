@@ -60,8 +60,12 @@ class TestPortfolioApi(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        import shutil, os
         app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=cls.engine)
+        upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", "documents")
+        if os.path.exists(upload_dir):
+            shutil.rmtree(upload_dir, ignore_errors=True)
 
     def test_get_portfolio_config_public(self):
         """Test public retrieval of portfolio configuration auto-populated from CV."""
@@ -93,3 +97,55 @@ class TestPortfolioApi(unittest.TestCase):
         update_payload = {"headline": "Hacker Headline"}
         res = self.client.put("/portfolio/config", json=update_payload, headers=headers)
         self.assertEqual(res.status_code, 403)
+
+    def test_upload_portfolio_cv_valid_pdf(self):
+        """Test uploading a valid PDF CV by an administrator."""
+        headers = {"Authorization": f"Bearer {self.admin_token}"}
+        fake_pdf_content = b"%PDF-1.4\n1 0 obj\n<< /Title (My CV) >>\nendobj\n%%EOF"
+        files = {"file": ("my_resume.pdf", fake_pdf_content, "application/pdf")}
+
+        res = self.client.put("/portfolio/cv", headers=headers, files=files)
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertIsNotNone(data["cv_url"])
+        self.assertTrue(data["cv_url"].endswith(".pdf"))
+        self.assertTrue(data["cv_url"].startswith("/uploads/documents/"))
+
+    def test_upload_portfolio_cv_rejects_non_pdf(self):
+        """Test uploading a non-PDF file returns 400 Bad Request."""
+        headers = {"Authorization": f"Bearer {self.admin_token}"}
+        fake_txt_content = b"This is just a text file"
+        files = {"file": ("my_resume.txt", fake_txt_content, "text/plain")}
+
+        res = self.client.put("/portfolio/cv", headers=headers, files=files)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Only PDF files", res.json()["detail"])
+
+    def test_upload_portfolio_cv_rejects_fake_pdf_signature(self):
+        """Test uploading a file with .pdf extension but invalid PDF magic bytes returns 400."""
+        headers = {"Authorization": f"Bearer {self.admin_token}"}
+        corrupted_content = b"NOT_A_REAL_PDF_HEADER"
+        files = {"file": ("fake.pdf", corrupted_content, "application/pdf")}
+
+        res = self.client.put("/portfolio/cv", headers=headers, files=files)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("Invalid PDF file format", res.json()["detail"])
+
+    def test_delete_portfolio_cv(self):
+        """Test deleting uploaded portfolio CV."""
+        headers = {"Authorization": f"Bearer {self.admin_token}"}
+        fake_pdf_content = b"%PDF-1.4\nvalid pdf content\n%%EOF"
+        files = {"file": ("resume.pdf", fake_pdf_content, "application/pdf")}
+
+        # Upload first
+        upload_res = self.client.put("/portfolio/cv", headers=headers, files=files)
+        self.assertEqual(upload_res.status_code, 200)
+
+        # Delete
+        del_res = self.client.delete("/portfolio/cv", headers=headers)
+        self.assertEqual(del_res.status_code, 200)
+        self.assertIsNone(del_res.json()["cv_url"])
+
+        # Second delete returns 404
+        del_res2 = self.client.delete("/portfolio/cv", headers=headers)
+        self.assertEqual(del_res2.status_code, 404)

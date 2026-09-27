@@ -14,6 +14,7 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     admin = Column(Boolean, default=False, nullable=False)
     profile_picture = Column(String, nullable=True)
+    cv_url = Column(String, nullable=True)
     token = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -115,5 +116,6 @@ class PortfolioConfig(Base):
     experience = Column(JSON, nullable=True)
     education = Column(JSON, nullable=True)
     theme_config = Column(JSON, nullable=True)
+    cv_url = Column(String, nullable=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
