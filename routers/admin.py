@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_admin
-from models import Category, Expense, ExpenseItem, Medication, User
+from models import Category, Expense, ExpenseItem, GrossIncome, Medication, Saving, SavingItem, User
 from schemas import AdminStats, UserPublic, UserRoleUpdate
 
 router = APIRouter(
@@ -19,9 +19,17 @@ def get_admin_dashboard_stats(db: Session = Depends(get_db)):
     total_categories = db.query(Category).count()
     total_expenses = db.query(Expense).count()
     total_medications = db.query(Medication).count()
+    total_gross_incomes = db.query(GrossIncome).count()
+    total_savings = db.query(Saving).count()
 
     total_amount = sum(
         item.amount for item in db.query(ExpenseItem).all()
+    )
+    total_gross_income_amount = sum(
+        inc.amount for inc in db.query(GrossIncome).all()
+    )
+    total_savings_amount = sum(
+        item.amount for item in db.query(SavingItem).all()
     )
 
     return AdminStats(
@@ -29,7 +37,11 @@ def get_admin_dashboard_stats(db: Session = Depends(get_db)):
         total_categories=total_categories,
         total_expenses=total_expenses,
         total_medications=total_medications,
+        total_gross_incomes=total_gross_incomes,
+        total_savings=total_savings,
         total_expense_amount=float(total_amount),
+        total_gross_income_amount=float(total_gross_income_amount),
+        total_savings_amount=float(total_savings_amount),
     )
 
 

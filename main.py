@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from database import Base, engine, get_db
 from dependencies import get_docs_authenticated_user
 from models import User
-from routers import admin, auth, categories, expenses, github, medications, portfolio
+from routers import admin, auth, categories, expenses, github, incomes, medications, portfolio, savings
 
 from schemas import UserCreate, UserLogin, UserPublic
 
@@ -49,8 +49,10 @@ app.add_middleware(
 # Include Modular Routers
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(incomes.router)
 app.include_router(categories.router)
 app.include_router(expenses.router)
+app.include_router(savings.router)
 app.include_router(medications.router)
 app.include_router(github.router)
 app.include_router(portfolio.router)

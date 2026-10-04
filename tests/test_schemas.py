@@ -143,6 +143,31 @@ class TestCategoryAndMedicationSchemas(unittest.TestCase):
         self.assertEqual(len(cat.medications), 1)
         self.assertEqual(cat.medications[0].name, "Aspirin")
 
+    def test_category_create_schema_with_ids(self):
+        cat = CategoryCreate(
+            title="Healthcare",
+            expense_ids=[1, 2],
+            medication_ids=[3, 4],
+        )
+        self.assertEqual(cat.title, "Healthcare")
+        self.assertEqual(cat.expense_ids, [1, 2])
+        self.assertEqual(cat.medication_ids, [3, 4])
+
+    def test_category_link_unlink_schemas(self):
+        from schemas import CategoryLinkItems, CategoryUnlinkItems, CategoryUpdate
+        link_items = CategoryLinkItems(expense_ids=[1, 2], medication_ids=[5])
+        self.assertEqual(link_items.expense_ids, [1, 2])
+        self.assertEqual(link_items.medication_ids, [5])
+
+        unlink_items = CategoryUnlinkItems(expense_ids=[1])
+        self.assertEqual(unlink_items.expense_ids, [1])
+        self.assertEqual(unlink_items.medication_ids, [])
+
+        update = CategoryUpdate(title="New", expense_ids=[2], medication_ids=[6])
+        self.assertEqual(update.title, "New")
+        self.assertEqual(update.expense_ids, [2])
+        self.assertEqual(update.medication_ids, [6])
+
     def test_category_response_schema(self):
         cat_res = CategoryResponse(
             id=1,
@@ -155,7 +180,92 @@ class TestCategoryAndMedicationSchemas(unittest.TestCase):
         self.assertEqual(cat_res.id, 1)
         self.assertEqual(cat_res.total_amount, 210.0)
 
+    def test_gross_income_schemas(self):
+        from schemas import (
+            GrossIncomeCreate,
+            GrossIncomeLinkItems,
+            GrossIncomeResponse,
+            GrossIncomeUnlinkItems,
+            GrossIncomeUpdate,
+        )
+        create = GrossIncomeCreate(
+            title="Salary",
+            amount=5000.0,
+            tax_deductions=[TaxDeductionCreate(description="Tax", amount=1000.0)],
+            expense_ids=[1],
+            medication_ids=[2],
+        )
+        self.assertEqual(create.title, "Salary")
+        self.assertEqual(create.amount, 5000.0)
+        self.assertEqual(len(create.tax_deductions), 1)
+
+        update = GrossIncomeUpdate(title="Bonus", amount=2000.0)
+        self.assertEqual(update.title, "Bonus")
+        self.assertEqual(update.amount, 2000.0)
+
+        link = GrossIncomeLinkItems(expense_ids=[1, 2], medication_ids=[3])
+        self.assertEqual(link.expense_ids, [1, 2])
+
+        unlink = GrossIncomeUnlinkItems(expense_ids=[1])
+        self.assertEqual(unlink.expense_ids, [1])
+
+        res = GrossIncomeResponse(
+            id=1,
+            title="Salary",
+            amount=5000.0,
+            total_tax_deductions=1000.0,
+            net_income=4000.0,
+            total_expenses=1500.0,
+            total_medications=50.0,
+            remaining_income=2450.0,
+        )
+        self.assertEqual(res.remaining_income, 2450.0)
+
+
+class TestSavingsSchemas(unittest.TestCase):
+    def test_savings_schemas(self):
+        from schemas import (
+            SavingCreate,
+            SavingItemCreate,
+            SavingItemResponse,
+            SavingLinkExpense,
+            SavingResponse,
+            SavingUpdate,
+        )
+        create = SavingCreate(
+            title="Emergency Fund",
+            expense_id=10,
+            items=[SavingItemCreate(description="Initial", amount=500.0)],
+        )
+        self.assertEqual(create.title, "Emergency Fund")
+        self.assertEqual(create.expense_id, 10)
+        self.assertEqual(len(create.items), 1)
+
+        update = SavingUpdate(title="Updated Fund", expense_id=None)
+        self.assertEqual(update.title, "Updated Fund")
+        self.assertIsNone(update.expense_id)
+
+        link = SavingLinkExpense(expense_id=5)
+        self.assertEqual(link.expense_id, 5)
+
+        item_res = SavingItemResponse(id=1, saving_id=2, description="Deposit", amount=250.0)
+        self.assertEqual(item_res.id, 1)
+        self.assertEqual(item_res.amount, 250.0)
+
+        res = SavingResponse(
+            id=1,
+            title="Emergency Fund",
+            expense_id=10,
+            user_id=100,
+            total_amount=500.0,
+            items=[item_res],
+        )
+        self.assertEqual(res.id, 1)
+        self.assertEqual(res.total_amount, 500.0)
+        self.assertEqual(len(res.items), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

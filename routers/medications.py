@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user
-from models import Category, Medication, User
+from models import Category, GrossIncome, Medication, User
 from schemas import (
     MedicationCreate,
     MedicationDoseLog,
@@ -13,11 +13,15 @@ from schemas import (
 from redis_cache import delete_cache_pattern, get_cache, set_cache
 
 router = APIRouter(prefix="/medications", tags=["Medications"])
+HTTP_EXCEPTION_ERROR_MEDICATION_NOT_FOUND = "Medication not found"
+HTTP_EXCEPTION_ERROR_CATEGORY_NOT_FOUND = "Category not found"
+HTTP_EXCEPTION_ERROR_INCOME_NOT_FOUND = "Gross income record not found"
 
 
 def invalidate_user_medications_cache(user_id: int):
     delete_cache_pattern(f"cache:*medication*user:{user_id}*")
     delete_cache_pattern(f"cache:*category*user:{user_id}*")
+    delete_cache_pattern(f"cache:*income*user:{user_id}*")
 
 
 def build_medication_response(med: Medication) -> MedicationResponse:
@@ -29,7 +33,36 @@ def build_medication_response(med: Medication) -> MedicationResponse:
         doses_taken=med.doses_taken,
         total_spent=total_spent,
         category_id=med.category_id,
+        gross_income_id=med.gross_income_id,
     )
+
+
+def validate_medication_category(db: Session, category_id: int | None, user_id: int) -> None:
+    if category_id is not None:
+        category = (
+            db.query(Category)
+            .filter(Category.id == category_id, Category.user_id == user_id)
+            .first()
+        )
+        if not category:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=HTTP_EXCEPTION_ERROR_CATEGORY_NOT_FOUND,
+            )
+
+
+def validate_medication_gross_income(db: Session, gross_income_id: int | None, user_id: int) -> None:
+    if gross_income_id is not None:
+        gross_inc = (
+            db.query(GrossIncome)
+            .filter(GrossIncome.id == gross_income_id, GrossIncome.user_id == user_id)
+            .first()
+        )
+        if not gross_inc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=HTTP_EXCEPTION_ERROR_INCOME_NOT_FOUND,
+            )
 
 
 @router.post("/", response_model=MedicationResponse, status_code=status.HTTP_201_CREATED)
@@ -39,25 +72,18 @@ def create_medication(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Register a medication with its cost and initial count of doses already taken.
+    Register a medication with its cost and initial count of doses already taken,
+    with optional category and gross income association.
     """
-    if med_in.category_id is not None:
-        category = (
-            db.query(Category)
-            .filter(Category.id == med_in.category_id, Category.user_id == current_user.id)
-            .first()
-        )
-        if not category:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Category not found",
-            )
+    validate_medication_category(db, med_in.category_id, current_user.id)
+    validate_medication_gross_income(db, med_in.gross_income_id, current_user.id)
 
     med = Medication(
         name=med_in.name,
         cost=med_in.cost,
         doses_taken=med_in.doses_taken,
         category_id=med_in.category_id,
+        gross_income_id=med_in.gross_income_id,
         user_id=current_user.id,
     )
     db.add(med)
@@ -113,7 +139,7 @@ def get_medication(
     if not med:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Medication not found",
+            detail=HTTP_EXCEPTION_ERROR_MEDICATION_NOT_FOUND,
         )
     result = build_medication_response(med)
     set_cache(cache_key, result.model_dump(mode="json"))
@@ -139,7 +165,7 @@ def log_dose_taken(
     if not med:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Medication not found",
+            detail=HTTP_EXCEPTION_ERROR_MEDICATION_NOT_FOUND,
         )
 
     med.doses_taken += log_in.doses
@@ -158,7 +184,7 @@ def update_medication(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Update the cost of the medication or the total doses taken."""
+    """Update the cost of the medication, total doses taken, category, or gross income link."""
     med = (
         db.query(Medication)
         .filter(Medication.id == medication_id, Medication.user_id == current_user.id)
@@ -167,28 +193,21 @@ def update_medication(
     if not med:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Medication not found",
+            detail=HTTP_EXCEPTION_ERROR_MEDICATION_NOT_FOUND,
         )
 
     if update_in.cost is not None:
         med.cost = update_in.cost
     if update_in.doses_taken is not None:
         med.doses_taken = update_in.doses_taken
+
     if "category_id" in update_in.model_fields_set:
-        if update_in.category_id is not None:
-            category = (
-                db.query(Category)
-                .filter(Category.id == update_in.category_id, Category.user_id == current_user.id)
-                .first()
-            )
-            if not category:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Category not found",
-                )
-            med.category_id = update_in.category_id
-        else:
-            med.category_id = None
+        validate_medication_category(db, update_in.category_id, current_user.id)
+        med.category_id = update_in.category_id
+
+    if "gross_income_id" in update_in.model_fields_set:
+        validate_medication_gross_income(db, update_in.gross_income_id, current_user.id)
+        med.gross_income_id = update_in.gross_income_id
 
     db.commit()
     db.refresh(med)
@@ -212,7 +231,7 @@ def delete_medication(
     if not med:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Medication not found",
+            detail=HTTP_EXCEPTION_ERROR_MEDICATION_NOT_FOUND,
         )
     db.delete(med)
     db.commit()

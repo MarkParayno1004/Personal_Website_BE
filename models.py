@@ -21,6 +21,8 @@ class User(Base):
     categories = relationship("Category", back_populates="owner", cascade="all, delete-orphan")
     expenses = relationship("Expense", back_populates="owner", cascade="all, delete-orphan")
     medications = relationship("Medication", back_populates="owner", cascade="all, delete-orphan")
+    gross_incomes = relationship("GrossIncome", back_populates="owner", cascade="all, delete-orphan")
+    savings = relationship("Saving", back_populates="owner", cascade="all, delete-orphan")
 
 
 class Category(Base):
@@ -36,6 +38,21 @@ class Category(Base):
     medications = relationship("Medication", back_populates="category", cascade="all, delete-orphan")
 
 
+class GrossIncome(Base):
+    __tablename__ = "gross_incomes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)  # e.g., "Full-time Job Salary", "Freelance Project"
+    amount = Column(Float, default=0.0, nullable=False)  # Gross income amount
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    owner = relationship("User", back_populates="gross_incomes")
+    tax_deductions = relationship("TaxDeduction", back_populates="gross_income", cascade="all, delete-orphan")
+    expenses = relationship("Expense", back_populates="gross_income_rel")
+    medications = relationship("Medication", back_populates="gross_income_rel")
+
+
 class Expense(Base):
     __tablename__ = "expenses"
 
@@ -45,12 +62,15 @@ class Expense(Base):
     net_income = Column(Float, default=0.0, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    gross_income_id = Column(Integer, ForeignKey("gross_incomes.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     owner = relationship("User", back_populates="expenses")
     category = relationship("Category", back_populates="expenses")
+    gross_income_rel = relationship("GrossIncome", back_populates="expenses")
     items = relationship("ExpenseItem", back_populates="expense", cascade="all, delete-orphan")
     tax_deductions = relationship("TaxDeduction", back_populates="expense", cascade="all, delete-orphan")
+    savings = relationship("Saving", back_populates="expense", cascade="all, delete-orphan")
 
 
 class ExpenseItem(Base):
@@ -65,16 +85,44 @@ class ExpenseItem(Base):
     expense = relationship("Expense", back_populates="items")
 
 
+class Saving(Base):
+    __tablename__ = "savings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    owner = relationship("User", back_populates="savings")
+    expense = relationship("Expense", back_populates="savings")
+    items = relationship("SavingItem", back_populates="saving", cascade="all, delete-orphan")
+
+
+class SavingItem(Base):
+    __tablename__ = "saving_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    saving_id = Column(Integer, ForeignKey("savings.id"), nullable=False)
+    description = Column(String, nullable=False)
+    amount = Column(Float, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    saving = relationship("Saving", back_populates="items")
+
+
 class TaxDeduction(Base):
     __tablename__ = "tax_deductions"
 
     id = Column(Integer, primary_key=True, index=True)
-    expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=False)
+    expense_id = Column(Integer, ForeignKey("expenses.id"), nullable=True)
+    gross_income_id = Column(Integer, ForeignKey("gross_incomes.id"), nullable=True)
     description = Column(String, nullable=False)
     amount = Column(Float, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     expense = relationship("Expense", back_populates="tax_deductions")
+    gross_income = relationship("GrossIncome", back_populates="tax_deductions")
 
 
 class Medication(Base):
@@ -86,10 +134,12 @@ class Medication(Base):
     doses_taken = Column(Integer, default=0, nullable=False)  # How many already taken
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
+    gross_income_id = Column(Integer, ForeignKey("gross_incomes.id"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     owner = relationship("User", back_populates="medications")
     category = relationship("Category", back_populates="medications")
+    gross_income_rel = relationship("GrossIncome", back_populates="medications")
 
 
 class PortfolioConfig(Base):
@@ -118,4 +168,3 @@ class PortfolioConfig(Base):
     theme_config = Column(JSON, nullable=True)
     cv_url = Column(String, nullable=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-

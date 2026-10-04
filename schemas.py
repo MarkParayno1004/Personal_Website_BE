@@ -51,6 +51,52 @@ class UserRoleUpdate(BaseModel):
 
 
 # ==========================================
+# Savings Schemas
+# ==========================================
+class SavingItemCreate(BaseModel):
+    description: str
+    amount: float
+
+
+class SavingItemResponse(BaseModel):
+    id: int
+    saving_id: int | None = None
+    description: str
+    amount: float
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SavingCreate(BaseModel):
+    title: str
+    expense_id: int | None = None
+    items: list[SavingItemCreate] = []
+
+
+class SavingUpdate(BaseModel):
+    title: str | None = None
+    expense_id: int | None = None
+    items: list[SavingItemCreate] | None = None
+
+
+class SavingLinkExpense(BaseModel):
+    expense_id: int
+
+
+class SavingResponse(BaseModel):
+    id: int
+    title: str
+    expense_id: int | None = None
+    user_id: int | None = None
+    total_amount: float = 0.0
+    items: list[SavingItemResponse] = []
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==========================================
 # Expenses & Tax Deduction Schemas
 # ==========================================
 class ExpenseItemCreate(BaseModel):
@@ -84,6 +130,7 @@ class ExpenseCreate(BaseModel):
     gross_income: float = 0.0
     net_income: float | None = None
     category_id: int | None = None
+    gross_income_id: int | None = None
     items: list[ExpenseItemCreate] = []
     tax_deductions: list[TaxDeductionCreate] = []
 
@@ -93,6 +140,7 @@ class ExpenseUpdate(BaseModel):
     gross_income: float | None = None
     net_income: float | None = None
     category_id: int | None = None
+    gross_income_id: int | None = None
     items: list[ExpenseItemCreate] | None = None
     tax_deductions: list[TaxDeductionCreate] | None = None
 
@@ -107,8 +155,11 @@ class ExpenseResponse(BaseModel):
     total_amount: float = 0.0  # Kept for backward compatibility
     remaining_income: float = 0.0
     category_id: int | None = None
+    gross_income_id: int | None = None
     items: list[ExpenseItemResponse] = []
     tax_deductions: list[TaxDeductionResponse] = []
+    savings: list[SavingResponse] = []
+    total_savings: float = 0.0
     created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -122,12 +173,14 @@ class MedicationCreate(BaseModel):
     cost: float  # Cost of medicine
     doses_taken: int = 0  # How many already taken
     category_id: int | None = None
+    gross_income_id: int | None = None
 
 
 class MedicationUpdate(BaseModel):
     cost: float | None = None
     doses_taken: int | None = None
     category_id: int | None = None
+    gross_income_id: int | None = None
 
 
 class MedicationDoseLog(BaseModel):
@@ -141,6 +194,7 @@ class MedicationResponse(BaseModel):
     doses_taken: int
     total_spent: float = 0.0
     category_id: int | None = None
+    gross_income_id: int | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -148,14 +202,28 @@ class MedicationResponse(BaseModel):
 # ==========================================
 # Category Schemas
 # ==========================================
+class CategoryLinkItems(BaseModel):
+    expense_ids: list[int] = []
+    medication_ids: list[int] = []
+
+
+class CategoryUnlinkItems(BaseModel):
+    expense_ids: list[int] = []
+    medication_ids: list[int] = []
+
+
 class CategoryCreate(BaseModel):
     title: str
     expenses: list[ExpenseCreate] = []
     medications: list[MedicationCreate] = []
+    expense_ids: list[int] = []
+    medication_ids: list[int] = []
 
 
 class CategoryUpdate(BaseModel):
     title: str | None = None
+    expense_ids: list[int] | None = None
+    medication_ids: list[int] | None = None
 
 
 class CategoryResponse(BaseModel):
@@ -167,6 +235,53 @@ class CategoryResponse(BaseModel):
     total_expenses_amount: float = 0.0
     total_medications_amount: float = 0.0
     total_amount: float = 0.0
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ==========================================
+# Gross Income Schemas
+# ==========================================
+class GrossIncomeCreate(BaseModel):
+    title: str  # e.g. "Full-time Software Engineer Salary"
+    amount: float = 0.0  # Gross income amount
+    tax_deductions: list[TaxDeductionCreate] = []
+    expense_ids: list[int] = []
+    medication_ids: list[int] = []
+
+
+class GrossIncomeUpdate(BaseModel):
+    title: str | None = None
+    amount: float | None = None
+    tax_deductions: list[TaxDeductionCreate] | None = None
+    expense_ids: list[int] | None = None
+    medication_ids: list[int] | None = None
+
+
+class GrossIncomeLinkItems(BaseModel):
+    expense_ids: list[int] = []
+    medication_ids: list[int] = []
+
+
+class GrossIncomeUnlinkItems(BaseModel):
+    expense_ids: list[int] = []
+    medication_ids: list[int] = []
+
+
+class GrossIncomeResponse(BaseModel):
+    id: int
+    title: str
+    amount: float = 0.0  # Gross income amount
+    total_tax_deductions: float = 0.0
+    net_income: float = 0.0
+    total_expenses: float = 0.0
+    total_medications: float = 0.0
+    remaining_income: float = 0.0
+    user_id: int | None = None
+    tax_deductions: list[TaxDeductionResponse] = []
+    expenses: list[ExpenseResponse] = []
+    medications: list[MedicationResponse] = []
     created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -204,7 +319,11 @@ class AdminStats(BaseModel):
     total_expenses: int
     total_medications: int
     total_categories: int = 0
+    total_gross_incomes: int = 0
+    total_savings: int = 0
     total_expense_amount: float
+    total_gross_income_amount: float = 0.0
+    total_savings_amount: float = 0.0
 
 
 # ==========================================
@@ -251,4 +370,3 @@ class PortfolioConfigResponse(PortfolioConfigBase):
     updated_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
-

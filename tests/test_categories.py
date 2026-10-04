@@ -340,3 +340,197 @@ class TestCategoriesModule(unittest.TestCase):
             headers=self.headers1,
         )
         self.assertEqual(res.status_code, 404)
+
+    def test_12_create_category_linking_existing_expense_and_medication_ids(self):
+        # Create uncategorized expense
+        exp_res = self.client.post(
+            "/expenses/",
+            json={"title": "Uncategorized Expense 1", "gross_income": 1000.0, "items": [{"description": "Item 1", "amount": 100.0}]},
+            headers=self.headers1,
+        )
+        self.assertEqual(exp_res.status_code, 201)
+        exp_id = exp_res.json()["id"]
+        self.assertIsNone(exp_res.json()["category_id"])
+
+        # Create uncategorized medication
+        med_res = self.client.post(
+            "/medications/",
+            json={"name": "Uncategorized Med 1", "cost": 20.0, "doses_taken": 3},
+            headers=self.headers1,
+        )
+        self.assertEqual(med_res.status_code, 201)
+        med_id = med_res.json()["id"]
+        self.assertIsNone(med_res.json()["category_id"])
+
+        # Create category passing expense_ids and medication_ids
+        cat_res = self.client.post(
+            "/categories/",
+            json={
+                "title": "Linked Category",
+                "expense_ids": [exp_id],
+                "medication_ids": [med_id],
+            },
+            headers=self.headers1,
+        )
+        self.assertEqual(cat_res.status_code, 201)
+        cat_data = cat_res.json()
+        cat_id = cat_data["id"]
+
+        self.assertEqual(len(cat_data["expenses"]), 1)
+        self.assertEqual(cat_data["expenses"][0]["id"], exp_id)
+        self.assertEqual(cat_data["expenses"][0]["category_id"], cat_id)
+
+        self.assertEqual(len(cat_data["medications"]), 1)
+        self.assertEqual(cat_data["medications"][0]["id"], med_id)
+        self.assertEqual(cat_data["medications"][0]["category_id"], cat_id)
+
+        # Verify expense record still intact in database via GET /expenses/{id}
+        exp_check = self.client.get(f"/expenses/{exp_id}", headers=self.headers1)
+        self.assertEqual(exp_check.status_code, 200)
+        self.assertEqual(exp_check.json()["id"], exp_id)
+        self.assertEqual(exp_check.json()["category_id"], cat_id)
+        self.assertEqual(exp_check.json()["title"], "Uncategorized Expense 1")
+
+        # Verify medication record still intact in database via GET /medications/{id}
+        med_check = self.client.get(f"/medications/{med_id}", headers=self.headers1)
+        self.assertEqual(med_check.status_code, 200)
+        self.assertEqual(med_check.json()["id"], med_id)
+        self.assertEqual(med_check.json()["category_id"], cat_id)
+        self.assertEqual(med_check.json()["name"], "Uncategorized Med 1")
+
+    def test_13_link_existing_items_via_link_and_import_endpoints(self):
+        # Create category
+        cat_res = self.client.post(
+            "/categories/",
+            json={"title": "Import Target Category"},
+            headers=self.headers1,
+        )
+        cat_id = cat_res.json()["id"]
+
+        # Create standalone expense and medication
+        exp_res = self.client.post(
+            "/expenses/",
+            json={"title": "To Link Exp", "items": [{"description": "Gas", "amount": 45.0}]},
+            headers=self.headers1,
+        )
+        exp_id = exp_res.json()["id"]
+
+        med_res = self.client.post(
+            "/medications/",
+            json={"name": "To Link Med", "cost": 12.0, "doses_taken": 2},
+            headers=self.headers1,
+        )
+        med_id = med_res.json()["id"]
+
+        # Use POST /categories/{id}/link
+        link_res = self.client.post(
+            f"/categories/{cat_id}/link",
+            json={"expense_ids": [exp_id], "medication_ids": [med_id]},
+            headers=self.headers1,
+        )
+        self.assertEqual(link_res.status_code, 200)
+        data = link_res.json()
+        self.assertEqual(len(data["expenses"]), 1)
+        self.assertEqual(data["expenses"][0]["id"], exp_id)
+        self.assertEqual(len(data["medications"]), 1)
+        self.assertEqual(data["medications"][0]["id"], med_id)
+
+    def test_14_unlink_items_via_unlink_endpoint(self):
+        # Create category with linked items
+        exp_res = self.client.post(
+            "/expenses/",
+            json={"title": "To Unlink Exp", "items": [{"description": "Dinner", "amount": 60.0}]},
+            headers=self.headers1,
+        )
+        exp_id = exp_res.json()["id"]
+
+        med_res = self.client.post(
+            "/medications/",
+            json={"name": "To Unlink Med", "cost": 8.0, "doses_taken": 1},
+            headers=self.headers1,
+        )
+        med_id = med_res.json()["id"]
+
+        cat_res = self.client.post(
+            "/categories/",
+            json={"title": "Unlink Source Category", "expense_ids": [exp_id], "medication_ids": [med_id]},
+            headers=self.headers1,
+        )
+        cat_id = cat_res.json()["id"]
+
+        # Unlink both items
+        unlink_res = self.client.post(
+            f"/categories/{cat_id}/unlink",
+            json={"expense_ids": [exp_id], "medication_ids": [med_id]},
+            headers=self.headers1,
+        )
+        self.assertEqual(unlink_res.status_code, 200)
+        self.assertEqual(len(unlink_res.json()["expenses"]), 0)
+        self.assertEqual(len(unlink_res.json()["medications"]), 0)
+
+        # Check in the database that expense and medication records still exist
+        exp_check = self.client.get(f"/expenses/{exp_id}", headers=self.headers1)
+        self.assertEqual(exp_check.status_code, 200)
+        self.assertEqual(exp_check.json()["id"], exp_id)
+        self.assertIsNone(exp_check.json()["category_id"])
+
+        med_check = self.client.get(f"/medications/{med_id}", headers=self.headers1)
+        self.assertEqual(med_check.status_code, 200)
+        self.assertEqual(med_check.json()["id"], med_id)
+        self.assertIsNone(med_check.json()["category_id"])
+
+    def test_15_patch_update_category_with_ids(self):
+        cat_res = self.client.post(
+            "/categories/",
+            json={"title": "Patch Cat Test"},
+            headers=self.headers1,
+        )
+        cat_id = cat_res.json()["id"]
+
+        exp_res = self.client.post(
+            "/expenses/",
+            json={"title": "Patch Exp", "items": []},
+            headers=self.headers1,
+        )
+        exp_id = exp_res.json()["id"]
+
+        med_res = self.client.post(
+            "/medications/",
+            json={"name": "Patch Med", "cost": 5.0, "doses_taken": 1},
+            headers=self.headers1,
+        )
+        med_id = med_res.json()["id"]
+
+        patch_res = self.client.patch(
+            f"/categories/{cat_id}",
+            json={"expense_ids": [exp_id], "medication_ids": [med_id]},
+            headers=self.headers1,
+        )
+        self.assertEqual(patch_res.status_code, 200)
+        self.assertEqual(len(patch_res.json()["expenses"]), 1)
+        self.assertEqual(len(patch_res.json()["medications"]), 1)
+
+    def test_16_linking_other_users_items_returns_404(self):
+        # User 2 creates an expense
+        exp_res = self.client.post(
+            "/expenses/",
+            json={"title": "User 2 Expense", "items": []},
+            headers=self.headers2,
+        )
+        u2_exp_id = exp_res.json()["id"]
+
+        # User 1 tries to create category linking User 2's expense
+        cat_res = self.client.post(
+            "/categories/",
+            json={"title": "Unauthorized Link Cat", "expense_ids": [u2_exp_id]},
+            headers=self.headers1,
+        )
+        self.assertEqual(cat_res.status_code, 404)
+
+    def test_17_linking_nonexistent_ids_returns_404(self):
+        cat_res = self.client.post(
+            "/categories/",
+            json={"title": "Nonexistent Cat", "expense_ids": [99999]},
+            headers=self.headers1,
+        )
+        self.assertEqual(cat_res.status_code, 404)
