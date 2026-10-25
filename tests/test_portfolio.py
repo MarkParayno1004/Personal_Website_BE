@@ -40,7 +40,6 @@ class TestPortfolioApi(unittest.TestCase):
             first_name="Admin",
             last_name="User",
             hashed_password=hash_password("adminpass"),
-            token=cls.admin_token,
             admin=True,
         )
         cls.non_admin_token = create_access_token({"sub": "2", "email": "user@test.com"})
@@ -50,7 +49,6 @@ class TestPortfolioApi(unittest.TestCase):
             first_name="Normal",
             last_name="User",
             hashed_password=hash_password("userpass"),
-            token=cls.non_admin_token,
             admin=False,
         )
         db.add(cls.admin_user)
@@ -63,7 +61,7 @@ class TestPortfolioApi(unittest.TestCase):
         import shutil, os
         app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=cls.engine)
-        upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads", "documents")
+        upload_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "private_uploads", "documents")
         if os.path.exists(upload_dir):
             shutil.rmtree(upload_dir, ignore_errors=True)
 
@@ -107,9 +105,21 @@ class TestPortfolioApi(unittest.TestCase):
         res = self.client.put("/portfolio/cv", headers=headers, files=files)
         self.assertEqual(res.status_code, 200)
         data = res.json()
-        self.assertIsNotNone(data["cv_url"])
-        self.assertTrue(data["cv_url"].endswith(".pdf"))
-        self.assertTrue(data["cv_url"].startswith("/uploads/documents/"))
+        self.assertTrue(data["has_cv"])
+        self.assertNotIn("cv_url", data)
+
+        # The public config never leaks a CV location
+        public = self.client.get("/portfolio/config").json()
+        self.assertTrue(public["has_cv"])
+        self.assertNotIn("cv_url", public)
+
+        # Only admins can download it
+        self.assertEqual(self.client.get("/portfolio/cv").status_code, 401)
+        non_admin = {"Authorization": f"Bearer {self.non_admin_token}"}
+        self.assertEqual(self.client.get("/portfolio/cv", headers=non_admin).status_code, 403)
+        download = self.client.get("/portfolio/cv", headers=headers)
+        self.assertEqual(download.status_code, 200)
+        self.assertEqual(download.content, fake_pdf_content)
 
     def test_upload_portfolio_cv_rejects_non_pdf(self):
         """Test uploading a non-PDF file returns 400 Bad Request."""
@@ -144,7 +154,7 @@ class TestPortfolioApi(unittest.TestCase):
         # Delete
         del_res = self.client.delete("/portfolio/cv", headers=headers)
         self.assertEqual(del_res.status_code, 200)
-        self.assertIsNone(del_res.json()["cv_url"])
+        self.assertFalse(del_res.json()["has_cv"])
 
         # Second delete returns 404
         del_res2 = self.client.delete("/portfolio/cv", headers=headers)

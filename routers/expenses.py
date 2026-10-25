@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.orm import Session, selectinload
 from database import get_db
 from dependencies import get_current_user
-from models import Category, Expense, ExpenseItem, GrossIncome, TaxDeduction, User
+from models import Category, Expense, ExpenseItem, GrossIncome, Saving, TaxDeduction, User
+from pagination import Page, page_params, paginate
 from schemas import (
     ExpenseCreate,
     ExpenseItemCreate,
@@ -18,6 +19,13 @@ from schemas import (
 from redis_cache import delete_cache_pattern, get_cache, set_cache
 
 router = APIRouter(prefix="/expenses", tags=["Expenses"])
+
+# Everything build_expense_response walks; reuse as sub-options wherever expenses are nested.
+EXPENSE_LOAD_OPTIONS = (
+    selectinload(Expense.items),
+    selectinload(Expense.tax_deductions),
+    selectinload(Expense.savings).selectinload(Saving.items),
+)
 HTTP_EXCEPTION_ERROR_EXPENSE_NOT_FOUND = "Expense not found"
 HTTP_EXCEPTION_ERROR_CATEGORY_NOT_FOUND = "Category not found"
 HTTP_EXCEPTION_ERROR_INCOME_NOT_FOUND = "Gross income record not found"
@@ -189,24 +197,22 @@ def create_expense(
 
 @router.get("/", response_model=list[ExpenseResponse])
 def get_expenses(
+    response: Response,
+    page: Page = Depends(page_params),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Retrieve all expenses with items, tax deductions, and computed totals for the current user."""
-    cache_key = f"cache:expenses:user:{current_user.id}"
-    cached = get_cache(cache_key)
-    if cached:
-        return [ExpenseResponse(**item) for item in cached]
-
-    expenses = (
+    """List the current user's expenses with items, deductions and totals. Paginated; total in X-Total-Count."""
+    query = (
         db.query(Expense)
         .filter(Expense.user_id == current_user.id)
-        .order_by(Expense.created_at.desc())
-        .all()
+        .options(*EXPENSE_LOAD_OPTIONS)
+        .order_by(Expense.created_at.desc(), Expense.id.desc())
     )
-    result = [build_expense_response(exp) for exp in expenses]
-    set_cache(cache_key, [item.model_dump(mode="json") for item in result])
-    return result
+    return paginate(
+        query, page, response, build_expense_response, ExpenseResponse,
+        cache_key=f"cache:expenses:user:{current_user.id}",
+    )
 
 
 @router.get("/{expense_id}", response_model=ExpenseResponse)

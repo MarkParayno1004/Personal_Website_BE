@@ -21,6 +21,31 @@ A robust FastAPI backend powered by PostgreSQL (`psql`), JWT Authentication, Rol
   - `GET /admin/stats`: High-level statistics (total users, total expenses, total medications, total spend).
   - `GET /admin/users`: View all users and their role assignments.
   - `PATCH /admin/users/{user_id}/role`: Promote or demote user admin privileges.
+  - `GET /admin/audit-logs?action=&limit=&offset=`: Audit trail, newest first (logins, logouts, registrations, password changes/resets, email verification, account deletion, role changes, portfolio config/CV changes). Never contains passwords or tokens.
+
+### Pagination
+
+All list endpoints (`/categories/`, `/expenses/`, `/incomes/`, `/medications/`, `/savings/`, `/admin/users`, `/admin/audit-logs`) accept `limit` (default 50, max 100) and `offset` (default 0). The body is still a plain JSON array; the total row count is in the `X-Total-Count` response header (exposed via CORS).
+
+### Account & Email (`/auth`)
+
+- `POST /auth/register`, `POST /auth/login`: return the user plus `token` (send as `Authorization: Bearer <token>`).
+- `POST /auth/logout`: revokes every token for the user.
+- `PUT /auth/me/password`: change password (returns a fresh token; old tokens are revoked).
+- `DELETE /auth/me`: delete the account and its data/files.
+- `POST /auth/verify-email/request` (auth): email a verification link (`FRONTEND_URL/verify-email?token=...`, valid 24 h). Sent automatically on register.
+- `POST /auth/verify-email/confirm` `{token}`: marks `email_verified`.
+- `POST /auth/password-reset/request` `{email}`: always `202` (no account enumeration); emails `FRONTEND_URL/reset-password?token=...` (valid 30 min, single use).
+- `POST /auth/password-reset/confirm` `{token, new_password}`: sets the password and revokes all sessions.
+- Emails go through [Resend](https://resend.com) (`RESEND_API_KEY`, `EMAIL_FROM`). Without a key, the email (including the link) is logged instead, outside production.
+- Unverified users can still log in; `email_verified` is exposed on the user object.
+
+### File Storage & CV Privacy
+
+- With `R2_*` set, files go to Cloudflare R2; otherwise to local disk (`uploads/` is served at `/uploads`, `private_uploads/` is never served).
+- Profile pictures are public (`profile_picture` is a full URL).
+- CVs are private: the API only exposes `has_cv`. The owner downloads their CV at `GET /auth/me/cv`; admins download the portfolio CV at `GET /portfolio/cv`. Upload/replace/delete via `PUT`/`DELETE` on the same paths.
+- Files uploaded before this change (`/uploads/...` paths) must be re-uploaded.
 
 ### 3. Expenses & Tax Deductions Module (`/expenses`)
 
@@ -111,27 +136,49 @@ A robust FastAPI backend powered by PostgreSQL (`psql`), JWT Authentication, Rol
 
 ```powershell
 uv sync
-# or
-pip install -r requirements.txt
 ```
 
-### 2. Configure Environment Variables (Optional)
+### 2. Configure Environment Variables
 
-Create a `.env` file in the project root:
+Copy `.env.example` to `.env` and fill in the values. `DATABASE_URL` and `JWT_SECRET_KEY` are required. Everything else is optional for local development:
 
-```env
-DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/personal_portfolio
-JWT_SECRET_KEY=your_secure_32_byte_secret_key_here
-GITHUB_USERNAME=MarkParayno1004
-GITHUB_TOKEN=your_optional_github_pat
+| Variable | Purpose |
+| --- | --- |
+| `CORS_ORIGINS` | Comma-separated frontend origins |
+| `REDIS_URL` | Cache (e.g. Upstash `rediss://...`); caching is skipped if unreachable |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL` | Cloudflare R2 storage (all five required to enable it) |
+| `R2_PRIVATE_BUCKET` | Bucket without public access for CVs (defaults to `R2_BUCKET`) |
+| `RESEND_API_KEY`, `EMAIL_FROM` | Transactional email |
+| `FRONTEND_URL` | Base URL for email links |
+
+### Deploying (Render + Neon + Upstash + R2)
+
+Start command:
+
+```bash
+uv run --no-sync alembic upgrade head && uv run --no-sync uvicorn main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips="*"
 ```
 
-### 3. Start Development Server
+### 3. Apply Database Migrations
+
+The app no longer creates tables on startup; Alembic owns the schema.
 
 ```powershell
-fastapi dev main.py
+uv run alembic upgrade head
 ```
 
-Visit the interactive OpenAPI documentation at [http://localhost:8000/docs](http://localhost:8000/docs).
+### 4. Start Development Server
+
+```powershell
+uv run fastapi dev main.py
+```
+
+Visit the interactive OpenAPI documentation at [http://localhost:8000/docs](http://localhost:8000/docs) (admin accounts only; disabled when `APP_ENV=production`).
+
+### 5. Run Tests
+
+```powershell
+uv run python -m unittest discover -s tests -v
+```
 
 # Personal_Website_BE

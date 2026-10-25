@@ -1,4 +1,4 @@
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBasic, HTTPBasicCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from database import get_db
@@ -31,6 +31,7 @@ def get_current_user(
                 detail="Invalid token payload",
             )
         user_id = int(user_id_str)
+        token_version = int(payload.get("ver", 0))
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -39,10 +40,11 @@ def get_current_user(
         )
 
     user = db.query(User).filter(User.id == user_id).first()
-    if not user:
+    if not user or user.token_version != token_version:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     return user
 
@@ -62,29 +64,26 @@ def get_current_admin(
 def get_docs_authenticated_user(
     basic_credentials: HTTPBasicCredentials | None = Depends(security_basic),
     credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
-    token: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> User:
     """
-    Authenticate access to protected API documentation (/docs, /redoc, /openapi.json) using:
+    Authenticate an ADMIN for protected API documentation (/docs, /redoc, /openapi.json) using:
     1. HTTP Basic Auth (email + password from DB)
     2. JWT Bearer token
-    3. Query parameter ?token=...
     """
     # 1. Try HTTP Basic Auth (Browser popup login)
     if basic_credentials:
         user = db.query(User).filter(User.email == basic_credentials.username).first()
-        if user and user.hashed_password and verify_password(basic_credentials.password, user.hashed_password):
+        if user and user.admin and user.hashed_password and verify_password(basic_credentials.password, user.hashed_password):
             return user
 
-    # 2. Try Bearer token or Query parameter token
-    raw_token = credentials.credentials if credentials else token
-    if raw_token:
+    # 2. Try Bearer token
+    if credentials:
         try:
-            payload = decode_access_token(raw_token)
+            payload = decode_access_token(credentials.credentials)
             user_id = int(payload.get("sub", 0))
             user = db.query(User).filter(User.id == user_id).first()
-            if user:
+            if user and user.admin and user.token_version == int(payload.get("ver", 0)):
                 return user
         except Exception:
             pass

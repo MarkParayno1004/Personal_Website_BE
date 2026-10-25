@@ -1,10 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.orm import Session, selectinload
 from database import get_db
 from dependencies import get_current_user
 from models import Category, Expense, ExpenseItem, Medication, TaxDeduction, User
-from routers.expenses import build_expense_response, invalidate_user_expenses_cache
-from routers.medications import build_medication_response, invalidate_user_medications_cache
+from pagination import Page, page_params, paginate
+from routers.expenses import (
+    EXPENSE_LOAD_OPTIONS,
+    build_expense_response,
+    invalidate_user_expenses_cache,
+    validate_expense_gross_income,
+)
+from routers.medications import (
+    build_medication_response,
+    invalidate_user_medications_cache,
+    validate_medication_gross_income,
+)
 from schemas import (
     CategoryCreate,
     CategoryLinkItems,
@@ -75,6 +85,7 @@ def compute_net_income(gross_income: float | None, net_income: float | None, tot
 
 
 def create_inline_expense(db: Session, exp_in: ExpenseCreate, category_id: int, user_id: int) -> Expense:
+    validate_expense_gross_income(db, exp_in.gross_income_id, user_id)
     total_deductions = sum(d.amount for d in exp_in.tax_deductions)
     computed_net_income = compute_net_income(exp_in.gross_income, exp_in.net_income, total_deductions)
 
@@ -100,6 +111,7 @@ def create_inline_expense(db: Session, exp_in: ExpenseCreate, category_id: int, 
 
 
 def create_inline_medication(db: Session, med_in: MedicationCreate, category_id: int, user_id: int) -> Medication:
+    validate_medication_gross_income(db, med_in.gross_income_id, user_id)
     med = Medication(
         name=med_in.name,
         cost=med_in.cost,
@@ -244,24 +256,26 @@ def create_category(
 
 @router.get("/", response_model=list[CategoryResponse])
 def get_categories(
+    response: Response,
+    page: Page = Depends(page_params),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Retrieve all categories and their nested expenses and medications for the current user."""
-    cache_key = f"cache:categories:user:{current_user.id}"
-    cached = get_cache(cache_key)
-    if cached:
-        return [CategoryResponse(**item) for item in cached]
-
-    categories = (
+    """List the current user's categories with nested expenses and medications. Paginated; total in X-Total-Count."""
+    query = (
         db.query(Category)
         .filter(Category.user_id == current_user.id)
-        .order_by(Category.created_at.desc())
-        .all()
+        .options(
+            selectinload(Category.expenses).options(*EXPENSE_LOAD_OPTIONS),
+            selectinload(Category.medications),
+        )
+        .order_by(Category.created_at.desc(), Category.id.desc())
     )
-    result = [build_category_response(cat) for cat in categories]
-    set_cache(cache_key, [item.model_dump(mode="json") for item in result])
-    return result
+    # Key must contain "category" so invalidate_user_categories_cache's pattern matches it.
+    return paginate(
+        query, page, response, build_category_response, CategoryResponse,
+        cache_key=f"cache:category-list:user:{current_user.id}",
+    )
 
 
 @router.get("/{category_id}", response_model=CategoryResponse)
@@ -313,8 +327,7 @@ def delete_category(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Delete an entire category and cascade-delete all its associated expenses
-    and medications.
+    Delete a category. Its expenses and medications are kept and become uncategorized.
     """
     category = get_user_category_or_404(db, category_id, current_user.id)
     db.delete(category)

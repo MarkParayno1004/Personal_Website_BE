@@ -20,17 +20,19 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.create_table(
-        'gross_incomes',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('title', sa.String(), nullable=False),
-        sa.Column('amount', sa.Float(), nullable=False, server_default='0.0'),
-        sa.Column('user_id', sa.Integer(), nullable=False),
-        sa.Column('created_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
-        sa.PrimaryKeyConstraint('id')
-    )
-    op.create_index(op.f('ix_gross_incomes_id'), 'gross_incomes', ['id'], unique=False)
+    # Databases bootstrapped by the old startup create_all() may already have this table.
+    if not sa.inspect(op.get_bind()).has_table('gross_incomes'):
+        op.create_table(
+            'gross_incomes',
+            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('title', sa.String(), nullable=False),
+            sa.Column('amount', sa.Float(), nullable=False, server_default='0.0'),
+            sa.Column('user_id', sa.Integer(), nullable=False),
+            sa.Column('created_at', sa.DateTime(), nullable=True),
+            sa.ForeignKeyConstraint(['user_id'], ['users.id'], ),
+            sa.PrimaryKeyConstraint('id')
+        )
+        op.create_index(op.f('ix_gross_incomes_id'), 'gross_incomes', ['id'], unique=False)
 
     op.add_column('tax_deductions', sa.Column('gross_income_id', sa.Integer(), nullable=True))
     op.create_foreign_key('fk_tax_deductions_gross_income_id', 'tax_deductions', 'gross_incomes', ['gross_income_id'], ['id'])

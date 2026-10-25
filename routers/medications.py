@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 from database import get_db
 from dependencies import get_current_user
 from models import Category, GrossIncome, Medication, User
+from pagination import Page, page_params, paginate
 from schemas import (
     MedicationCreate,
     MedicationDoseLog,
@@ -96,27 +97,24 @@ def create_medication(
 
 @router.get("/", response_model=list[MedicationResponse])
 def get_medications(
+    response: Response,
+    page: Page = Depends(page_params),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    List all medications tracked by the user, showing medicine cost,
-    doses already taken, and total expenditure.
+    List medications tracked by the user, showing medicine cost,
+    doses already taken, and total expenditure. Paginated; total in X-Total-Count.
     """
-    cache_key = f"cache:medications:user:{current_user.id}"
-    cached = get_cache(cache_key)
-    if cached:
-        return [MedicationResponse(**m) for m in cached]
-
-    meds = (
+    query = (
         db.query(Medication)
         .filter(Medication.user_id == current_user.id)
-        .order_by(Medication.name.asc())
-        .all()
+        .order_by(Medication.name.asc(), Medication.id.asc())
     )
-    result = [build_medication_response(m) for m in meds]
-    set_cache(cache_key, [m.model_dump(mode="json") for m in result])
-    return result
+    return paginate(
+        query, page, response, build_medication_response, MedicationResponse,
+        cache_key=f"cache:medications:user:{current_user.id}",
+    )
 
 
 @router.get("/{medication_id}", response_model=MedicationResponse)

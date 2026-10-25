@@ -254,7 +254,7 @@ class TestCategoriesModule(unittest.TestCase):
         self.assertEqual(len(cat_res.json()["medications"]), 1)
         self.assertEqual(cat_res.json()["total_amount"], 465.0)
 
-    def test_09_cascade_delete_category(self):
+    def test_09_delete_category_keeps_items_uncategorized(self):
         create_res = self.client.post(
             "/categories/",
             json={
@@ -286,13 +286,45 @@ class TestCategoriesModule(unittest.TestCase):
         get_cat_res = self.client.get(f"/categories/{cat_id}", headers=self.headers1)
         self.assertEqual(get_cat_res.status_code, 404)
 
-        # Confirm cascaded expense is gone
+        # Expense and medication survive, now without a category
         get_exp_res = self.client.get(f"/expenses/{exp_id}", headers=self.headers1)
-        self.assertEqual(get_exp_res.status_code, 404)
+        self.assertEqual(get_exp_res.status_code, 200)
+        self.assertIsNone(get_exp_res.json()["category_id"])
 
-        # Confirm cascaded medication is gone
         get_med_res = self.client.get(f"/medications/{med_id}", headers=self.headers1)
-        self.assertEqual(get_med_res.status_code, 404)
+        self.assertEqual(get_med_res.status_code, 200)
+        self.assertIsNone(get_med_res.json()["category_id"])
+
+    def test_09b_cannot_attach_inline_items_to_another_users_income(self):
+        """Regression: inline expenses/medications accepted any gross_income_id."""
+        income_res = self.client.post(
+            "/incomes/", json={"title": "User 1 Salary", "amount": 1000.0}, headers=self.headers1
+        )
+        self.assertEqual(income_res.status_code, 201)
+        income_id = income_res.json()["id"]
+
+        cat_id = self.client.post(
+            "/categories/", json={"title": "User 2 Category"}, headers=self.headers2
+        ).json()["id"]
+
+        res = self.client.post(
+            f"/categories/{cat_id}/expenses",
+            json={"title": "Sneaky", "gross_income_id": income_id},
+            headers=self.headers2,
+        )
+        self.assertEqual(res.status_code, 404)
+
+        res = self.client.post(
+            f"/categories/{cat_id}/medications",
+            json={"name": "Sneaky Med", "cost": 1.0, "gross_income_id": income_id},
+            headers=self.headers2,
+        )
+        self.assertEqual(res.status_code, 404)
+
+        # User 1's income is untouched
+        income = self.client.get(f"/incomes/{income_id}", headers=self.headers1).json()
+        self.assertEqual(income["expenses"], [])
+        self.assertEqual(income["medications"], [])
 
     def test_10_user_isolation(self):
         create_res = self.client.post(

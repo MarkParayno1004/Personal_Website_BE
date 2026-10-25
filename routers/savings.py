@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.orm import Session, selectinload
 from database import get_db
 from dependencies import get_current_user
 from models import Expense, Saving, SavingItem, User
+from pagination import Page, page_params, paginate
 from schemas import (
     SavingCreate,
     SavingItemCreate,
@@ -117,24 +118,22 @@ def create_saving(
 
 @router.get("/", response_model=list[SavingResponse])
 def get_savings(
+    response: Response,
+    page: Page = Depends(page_params),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Retrieve all savings records for the current user."""
-    cache_key = f"cache:savings:user:{current_user.id}"
-    cached = get_cache(cache_key)
-    if cached:
-        return [SavingResponse(**item) for item in cached]
-
-    savings = (
+    """List the current user's savings records. Paginated; total in X-Total-Count."""
+    query = (
         db.query(Saving)
         .filter(Saving.user_id == current_user.id)
-        .order_by(Saving.created_at.desc())
-        .all()
+        .options(selectinload(Saving.items))
+        .order_by(Saving.created_at.desc(), Saving.id.desc())
     )
-    result = [build_saving_response(s) for s in savings]
-    set_cache(cache_key, [item.model_dump(mode="json") for item in result])
-    return result
+    return paginate(
+        query, page, response, build_saving_response, SavingResponse,
+        cache_key=f"cache:savings:user:{current_user.id}",
+    )
 
 
 @router.get("/{saving_id}", response_model=SavingResponse)

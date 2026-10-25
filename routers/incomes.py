@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.orm import Session, selectinload
 from database import get_db
 from dependencies import get_current_user
 from models import Expense, GrossIncome, Medication, TaxDeduction, User
-from routers.expenses import build_expense_response, invalidate_user_expenses_cache
+from pagination import Page, page_params, paginate
+from routers.expenses import EXPENSE_LOAD_OPTIONS, build_expense_response, invalidate_user_expenses_cache
 from routers.medications import build_medication_response, invalidate_user_medications_cache
 from schemas import (
     GrossIncomeCreate,
@@ -215,24 +216,26 @@ def create_gross_income(
 
 @router.get("/", response_model=list[GrossIncomeResponse])
 def get_gross_incomes(
+    response: Response,
+    page: Page = Depends(page_params),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Retrieve all gross income streams with deductions and linked expenses/medications for the current user."""
-    cache_key = f"cache:incomes:user:{current_user.id}"
-    cached = get_cache(cache_key)
-    if cached:
-        return [GrossIncomeResponse(**item) for item in cached]
-
-    incomes = (
+    """List income streams with deductions and linked expenses/medications. Paginated; total in X-Total-Count."""
+    query = (
         db.query(GrossIncome)
         .filter(GrossIncome.user_id == current_user.id)
-        .order_by(GrossIncome.created_at.desc())
-        .all()
+        .options(
+            selectinload(GrossIncome.tax_deductions),
+            selectinload(GrossIncome.expenses).options(*EXPENSE_LOAD_OPTIONS),
+            selectinload(GrossIncome.medications),
+        )
+        .order_by(GrossIncome.created_at.desc(), GrossIncome.id.desc())
     )
-    result = [build_gross_income_response(inc) for inc in incomes]
-    set_cache(cache_key, [item.model_dump(mode="json") for item in result])
-    return result
+    return paginate(
+        query, page, response, build_gross_income_response, GrossIncomeResponse,
+        cache_key=f"cache:incomes:user:{current_user.id}",
+    )
 
 
 @router.get("/{income_id}", response_model=GrossIncomeResponse)

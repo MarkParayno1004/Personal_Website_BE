@@ -1,0 +1,20 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # Tests use their own in-memory SQLite; this only satisfies the import-time check.
+      DATABASE_URL: sqlite:///./ci.db
+      JWT_SECRET_KEY: ci-only-secret-key-that-is-at-least-32-bytes
+      APP_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - run: uv run python -m unittest discover -s tests -v

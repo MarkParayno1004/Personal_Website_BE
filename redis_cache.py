@@ -96,7 +96,7 @@ def delete_cache_pattern(pattern: str) -> None:
     try:
         client = get_redis_client()
         if client:
-            keys = client.keys(pattern)
+            keys = list(client.scan_iter(match=pattern))  # SCAN doesn't block Redis like KEYS
             if keys:
                 client.delete(*keys)
     except Exception as e:

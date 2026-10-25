@@ -17,18 +17,22 @@ def create_or_promote_admin(email: str, first_name: str, last_name: str, passwor
         user = db.query(User).filter(User.email == email).first()
         if user:
             print(f"User with email '{email}' already exists.")
+            user.email_verified = True  # admins are created by the operator, so the address is trusted
             if not user.admin:
                 user.admin = True
                 if password:
                     user.hashed_password = hash_password(password)
+                    user.token_version += 1  # revoke tokens issued under the old password
                 db.commit()
                 print(f"Successfully promoted '{email}' to administrator!")
             else:
                 if password:
                     user.hashed_password = hash_password(password)
+                    user.token_version += 1  # revoke tokens issued under the old password
                     db.commit()
                     print(f"Password updated for existing admin '{email}'.")
                 else:
+                    db.commit()
                     print(f"User '{email}' is already an administrator.")
             return
 
@@ -39,6 +43,7 @@ def create_or_promote_admin(email: str, first_name: str, last_name: str, passwor
             last_name=last_name,
             hashed_password=hash_password(password),
             admin=True,
+            email_verified=True,
         )
         db.add(admin_user)
         db.commit()

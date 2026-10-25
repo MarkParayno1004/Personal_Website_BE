@@ -1,19 +1,32 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, EmailStr
+from typing import Annotated
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
+
+
+def _within_bcrypt_limit(value: str) -> str:
+    if len(value.encode("utf-8")) > 72:
+        raise ValueError("Password must be at most 72 bytes")
+    return value
+
+
+# Shared input constraints
+Text = Annotated[str, Field(min_length=1, max_length=255)]
+Money = Annotated[float, Field(ge=0)]
+Password = Annotated[str, Field(min_length=8), AfterValidator(_within_bcrypt_limit)]
 
 
 # ==========================================
 # User Schemas
 # ==========================================
 class UserBase(BaseModel):
-    first_name: str
-    last_name: str
+    first_name: Text
+    last_name: Text
     email: EmailStr
     admin: bool = False
 
 
 class UserCreate(UserBase):
-    password: str
+    password: Password
 
 
 class UserLogin(BaseModel):
@@ -21,13 +34,36 @@ class UserLogin(BaseModel):
     password: str
 
 
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: Password
+
+
+class EmailRequest(BaseModel):
+    email: EmailStr
+
+
+class TokenConfirm(BaseModel):
+    token: str = Field(min_length=1, max_length=2048)
+
+
+class PasswordResetConfirm(TokenConfirm):
+    new_password: Password
+
+
 class UserPublic(UserBase):
     id: int
     profile_picture: str | None = None
-    cv_url: str | None = None
-    token: str | None = None
+    email_verified: bool = False
+    # The CV itself is private: only its presence is exposed; the owner downloads it via GET /auth/me/cv.
+    has_cv: bool = False
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserWithToken(UserPublic):
+    """Returned only by login/register; the token is never stored or exposed elsewhere."""
+    token: str
 
 
 class Token(BaseModel):
@@ -50,12 +86,25 @@ class UserRoleUpdate(BaseModel):
     admin: bool
 
 
+class AuditLogResponse(BaseModel):
+    id: int
+    actor_user_id: int | None = None
+    action: str
+    target_type: str | None = None
+    target_id: str | None = None
+    details: dict | None = None
+    ip: str | None = None
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 # ==========================================
 # Savings Schemas
 # ==========================================
 class SavingItemCreate(BaseModel):
-    description: str
-    amount: float
+    description: Text
+    amount: Money
 
 
 class SavingItemResponse(BaseModel):
@@ -69,13 +118,13 @@ class SavingItemResponse(BaseModel):
 
 
 class SavingCreate(BaseModel):
-    title: str
+    title: Text
     expense_id: int | None = None
     items: list[SavingItemCreate] = []
 
 
 class SavingUpdate(BaseModel):
-    title: str | None = None
+    title: Text | None = None
     expense_id: int | None = None
     items: list[SavingItemCreate] | None = None
 
@@ -100,8 +149,8 @@ class SavingResponse(BaseModel):
 # Expenses & Tax Deduction Schemas
 # ==========================================
 class ExpenseItemCreate(BaseModel):
-    description: str
-    amount: float
+    description: Text
+    amount: Money
 
 
 class ExpenseItemResponse(BaseModel):
@@ -113,8 +162,8 @@ class ExpenseItemResponse(BaseModel):
 
 
 class TaxDeductionCreate(BaseModel):
-    description: str
-    amount: float
+    description: Text
+    amount: Money
 
 
 class TaxDeductionResponse(BaseModel):
@@ -126,8 +175,8 @@ class TaxDeductionResponse(BaseModel):
 
 
 class ExpenseCreate(BaseModel):
-    title: str  # e.g. "Chase Sapphire Credit Card Expenses" or "Monthly Budget - March"
-    gross_income: float = 0.0
+    title: Text  # e.g. "Chase Sapphire Credit Card Expenses" or "Monthly Budget - March"
+    gross_income: Money = 0.0
     net_income: float | None = None
     category_id: int | None = None
     gross_income_id: int | None = None
@@ -136,8 +185,8 @@ class ExpenseCreate(BaseModel):
 
 
 class ExpenseUpdate(BaseModel):
-    title: str | None = None
-    gross_income: float | None = None
+    title: Text | None = None
+    gross_income: Money | None = None
     net_income: float | None = None
     category_id: int | None = None
     gross_income_id: int | None = None
@@ -169,22 +218,22 @@ class ExpenseResponse(BaseModel):
 # Medication Schemas
 # ==========================================
 class MedicationCreate(BaseModel):
-    name: str
-    cost: float  # Cost of medicine
-    doses_taken: int = 0  # How many already taken
+    name: Text
+    cost: Money  # Cost of medicine
+    doses_taken: int = Field(default=0, ge=0)  # How many already taken
     category_id: int | None = None
     gross_income_id: int | None = None
 
 
 class MedicationUpdate(BaseModel):
-    cost: float | None = None
-    doses_taken: int | None = None
+    cost: Money | None = None
+    doses_taken: int | None = Field(default=None, ge=0)
     category_id: int | None = None
     gross_income_id: int | None = None
 
 
 class MedicationDoseLog(BaseModel):
-    doses: int = 1  # How many taken in this log event
+    doses: int = Field(default=1, ge=1)  # How many taken in this log event
 
 
 class MedicationResponse(BaseModel):
@@ -213,7 +262,7 @@ class CategoryUnlinkItems(BaseModel):
 
 
 class CategoryCreate(BaseModel):
-    title: str
+    title: Text
     expenses: list[ExpenseCreate] = []
     medications: list[MedicationCreate] = []
     expense_ids: list[int] = []
@@ -221,7 +270,7 @@ class CategoryCreate(BaseModel):
 
 
 class CategoryUpdate(BaseModel):
-    title: str | None = None
+    title: Text | None = None
     expense_ids: list[int] | None = None
     medication_ids: list[int] | None = None
 
@@ -244,16 +293,16 @@ class CategoryResponse(BaseModel):
 # Gross Income Schemas
 # ==========================================
 class GrossIncomeCreate(BaseModel):
-    title: str  # e.g. "Full-time Software Engineer Salary"
-    amount: float = 0.0  # Gross income amount
+    title: Text  # e.g. "Full-time Software Engineer Salary"
+    amount: Money = 0.0  # Gross income amount
     tax_deductions: list[TaxDeductionCreate] = []
     expense_ids: list[int] = []
     medication_ids: list[int] = []
 
 
 class GrossIncomeUpdate(BaseModel):
-    title: str | None = None
-    amount: float | None = None
+    title: Text | None = None
+    amount: Money | None = None
     tax_deductions: list[TaxDeductionCreate] | None = None
     expense_ids: list[int] | None = None
     medication_ids: list[int] | None = None
@@ -346,7 +395,8 @@ class PortfolioConfigBase(BaseModel):
     experience: list[dict] | None = None
     education: list[dict] | None = None
     theme_config: dict | None = None
-    cv_url: str | None = None
+    # The CV is private (visitors are pointed to the email instead); admins download it via GET /portfolio/cv.
+    has_cv: bool = False
 
 
 class PortfolioConfigUpdate(BaseModel):
@@ -362,7 +412,6 @@ class PortfolioConfigUpdate(BaseModel):
     experience: list[dict] | None = None
     education: list[dict] | None = None
     theme_config: dict | None = None
-    cv_url: str | None = None
 
 
 class PortfolioConfigResponse(PortfolioConfigBase):

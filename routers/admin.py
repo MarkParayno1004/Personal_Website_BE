@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
+from audit import record_audit
 from database import get_db
 from dependencies import get_current_admin
-from models import Category, Expense, ExpenseItem, GrossIncome, Medication, Saving, SavingItem, User
-from schemas import AdminStats, UserPublic, UserRoleUpdate
+from models import AuditLog, Category, Expense, ExpenseItem, GrossIncome, Medication, Saving, SavingItem, User
+from pagination import Page, page_params, paginate
+from schemas import AdminStats, AuditLogResponse, UserPublic, UserRoleUpdate
 
 router = APIRouter(
     prefix="/admin",
@@ -22,15 +25,9 @@ def get_admin_dashboard_stats(db: Session = Depends(get_db)):
     total_gross_incomes = db.query(GrossIncome).count()
     total_savings = db.query(Saving).count()
 
-    total_amount = sum(
-        item.amount for item in db.query(ExpenseItem).all()
-    )
-    total_gross_income_amount = sum(
-        inc.amount for inc in db.query(GrossIncome).all()
-    )
-    total_savings_amount = sum(
-        item.amount for item in db.query(SavingItem).all()
-    )
+    total_amount = db.query(func.coalesce(func.sum(ExpenseItem.amount), 0.0)).scalar()
+    total_gross_income_amount = db.query(func.coalesce(func.sum(GrossIncome.amount), 0.0)).scalar()
+    total_savings_amount = db.query(func.coalesce(func.sum(SavingItem.amount), 0.0)).scalar()
 
     return AdminStats(
         total_users=total_users,
@@ -46,15 +43,32 @@ def get_admin_dashboard_stats(db: Session = Depends(get_db)):
 
 
 @router.get("/users", response_model=list[UserPublic])
-def list_all_users(db: Session = Depends(get_db)):
-    """List all registered users with their roles (passwords omitted)."""
-    return db.query(User).all()
+def list_all_users(response: Response, page: Page = Depends(page_params), db: Session = Depends(get_db)):
+    """List registered users with their roles (passwords omitted). Paginated; total in X-Total-Count."""
+    query = db.query(User).order_by(User.id.asc())
+    return paginate(query, page, response, UserPublic.model_validate, UserPublic)
+
+
+@router.get("/audit-logs", response_model=list[AuditLogResponse])
+def list_audit_logs(
+    response: Response,
+    action: str | None = Query(None, max_length=64),
+    page: Page = Depends(page_params),
+    db: Session = Depends(get_db),
+):
+    """Audit trail, newest first, optionally filtered by action. Paginated; total in X-Total-Count."""
+    query = db.query(AuditLog)
+    if action:
+        query = query.filter(AuditLog.action == action)
+    query = query.order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+    return paginate(query, page, response, AuditLogResponse.model_validate, AuditLogResponse)
 
 
 @router.patch("/users/{user_id}/role", response_model=UserPublic)
 def update_user_role(
     user_id: int,
     role_update: UserRoleUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     admin_user: User = Depends(get_current_admin),
 ):
@@ -73,7 +87,12 @@ def update_user_role(
             detail="Administrators cannot revoke their own admin rights",
         )
 
+    previous = target_user.admin
     target_user.admin = role_update.admin
     db.commit()
+    record_audit(
+        db, request, admin_user, "admin_role_change", "user", target_user.id,
+        {"from": previous, "to": role_update.admin},
+    )
     db.refresh(target_user)
     return target_user
