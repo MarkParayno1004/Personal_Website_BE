@@ -13,7 +13,7 @@ from dependencies import get_current_user, get_docs_authenticated_user
 from models import User
 from rate_limit import login_limiter, register_limiter
 from redis_cache import get_redis_client
-from routers import admin, auth, categories, expenses, github, incomes, medications, portfolio, savings
+from routers import admin, auth, categories, expenses, github, incomes, medications, savings
 
 from schemas import UserCreate, UserLogin, UserPublic, UserWithToken
 
@@ -69,7 +69,6 @@ app.include_router(expenses.router)
 app.include_router(savings.router)
 app.include_router(medications.router)
 app.include_router(github.router)
-app.include_router(portfolio.router)
 
 # Local-disk fallback only: serve public uploads (profile pictures). With R2 they are served by R2_PUBLIC_BASE_URL.
 # Private files (CVs) live in storage.PRIVATE_DIR, which is never mounted.

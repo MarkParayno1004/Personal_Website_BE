@@ -150,38 +150,6 @@ class Medication(Base):
     gross_income_rel = relationship("GrossIncome", back_populates="medications")
 
 
-class PortfolioConfig(Base):
-    __tablename__ = "portfolio_config"
-
-    id = Column(Integer, primary_key=True, index=True)
-    full_name = Column(String, nullable=False, default="Mark Philip V. Parayno")
-    headline = Column(String, nullable=False, default="Software Engineer | Mobile & Web Applications")
-    location = Column(String, nullable=False, default="San Juan City, Philippines")
-    phone = Column(String, nullable=False, default="+63 961 312 8973")
-    email = Column(String, nullable=False, default="paraynomarkphilip@gmail.com")
-    linkedin_url = Column(String, nullable=False, default="https://www.linkedin.com/in/mark-philip-parayno/")
-    github_username = Column(String, nullable=False, default="MarkParayno1004")
-    about_summary = Column(
-        String,
-        nullable=False,
-        default=(
-            "Software Engineer with production experience building and maintaining mobile and web applications "
-            "for a large retail enterprise. Strong across Flutter, Svelte, React, Django, and Laravel. Focused on "
-            "shipping reliable features, improving performance, and keeping delivery pipelines healthy in Agile teams."
-        ),
-    )
-    skills = Column(JSON, nullable=True)
-    experience = Column(JSON, nullable=True)
-    education = Column(JSON, nullable=True)
-    theme_config = Column(JSON, nullable=True)
-    cv_url = Column(String, nullable=True)  # private storage key, never exposed
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-
-    @property
-    def has_cv(self) -> bool:
-        return bool(self.cv_url)
-
-
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 

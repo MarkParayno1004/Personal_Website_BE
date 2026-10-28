@@ -21,7 +21,7 @@ A robust FastAPI backend powered by PostgreSQL (`psql`), JWT Authentication, Rol
   - `GET /admin/stats`: High-level statistics (total users, total expenses, total medications, total spend).
   - `GET /admin/users`: View all users and their role assignments.
   - `PATCH /admin/users/{user_id}/role`: Promote or demote user admin privileges.
-  - `GET /admin/audit-logs?action=&limit=&offset=`: Audit trail, newest first (logins, logouts, registrations, password changes/resets, email verification, account deletion, role changes, portfolio config/CV changes). Never contains passwords or tokens.
+  - `GET /admin/audit-logs?action=&limit=&offset=`: Audit trail, newest first (logins, logouts, registrations, password changes/resets, email verification, account deletion, role changes). Never contains passwords or tokens.
 
 ### Pagination
 
@@ -44,7 +44,7 @@ All list endpoints (`/categories/`, `/expenses/`, `/incomes/`, `/medications/`, 
 
 - With `R2_*` set, files go to Cloudflare R2; otherwise to local disk (`uploads/` is served at `/uploads`, `private_uploads/` is never served).
 - Profile pictures are public (`profile_picture` is a full URL).
-- CVs are private: the API only exposes `has_cv`. The owner downloads their CV at `GET /auth/me/cv`; admins download the portfolio CV at `GET /portfolio/cv`. Upload/replace/delete via `PUT`/`DELETE` on the same paths.
+- CVs are private: the API only exposes `has_cv`. The owner downloads their CV at `GET /auth/me/cv`. Upload/replace/delete via `PUT`/`DELETE` on the same path.
 - Files uploaded before this change (`/uploads/...` paths) must be re-uploaded.
 
 ### 3. Expenses & Tax Deductions Module (`/expenses`)
